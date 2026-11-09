@@ -89,6 +89,8 @@
   #legBar { position:absolute; left:0.75rem; right:0.75rem; top:0.625rem; height:0.75rem; border-radius:0.375rem; overflow:hidden; display:flex; }
   #legBar i { -webkit-flex:1; flex:1; display:block; }
   #legend span { position:absolute; font-size:0.6875rem; line-height:0.875rem; color:rgba(255,255,255,.7); white-space:nowrap; }
+  #legend.radar #legBar, #legend.radar .leg { display:none; }
+  #legend.radar #legInfo { top:0.75rem !important; }
   #bar { left:0.875rem; bottom:0.875rem; right:12.125rem; height:4rem; }
   #play { position:absolute; left:0.625rem; top:0.625rem; width:2.75rem; height:2.75rem; border-radius:1.375rem; background:#2285ff;
     text-align:center; line-height:2.75rem; font-size:1.25rem; font-weight:700; }
@@ -144,7 +146,7 @@
       <div class="title">Prognoza na 7 dni</div>
       <div id="drows"></div>
     </div>
-    <div id="credits">Dane: Open-Meteo · Mapa: Esri, © OpenStreetMap</div>
+    <div id="credits">Dane: Open-Meteo · Mapa: Esri, © OpenStreetMap · Radar: <a href="https://www.rainviewer.com" style="color:inherit">RainViewer</a> (IMGW)</div>
   </div>
 
   <div id="mapwrap">
@@ -152,7 +154,7 @@
 
     <div id="topleft">
       <div id="toolbar">
-        <div id="seg"><div data-h="12" class="on">12h</div><div data-h="24">24h</div><div data-h="48">48h</div></div>
+        <div id="seg"><div data-h="12" class="on">12h</div><div data-h="24">24h</div><div data-h="48">48h</div><div data-h="0">Radar</div></div>
         <div class="btn on" id="btnClouds">☁️ Chmury</div>
         <div class="btn on" id="btnWind">💨 Wiatr</div>
         <div class="btn" id="btnBase">🛰 Satelita</div>
@@ -163,10 +165,10 @@
     <div class="btn" id="locate">◎</div>
 
     <div class="glass" id="legend">
-      <div id="legBar" style="background:linear-gradient(to right,#8fd0ff,#3b8bff,#2fc24a,#ffe033,#ff9a1f,#e5261f,#b233cc)"></div>
-      <span style="left:0.75rem;top:1.75rem">Słaby deszcz</span>
-      <span style="left:0;width:100%;text-align:center;top:1.75rem">Umiarkowany</span>
-      <span style="right:0.75rem;top:1.75rem">Silny</span>
+      <div id="legBar"><i style="background:#8fd0ff"></i><i style="background:#3b8bff"></i><i style="background:#2fc24a"></i><i style="background:#ffe033"></i><i style="background:#ff9a1f"></i><i style="background:#e5261f"></i><i style="background:#b233cc"></i></div>
+      <span class="leg" style="left:0.75rem;top:1.75rem">Słaby deszcz</span>
+      <span class="leg" style="left:0;width:100%;text-align:center;top:1.75rem">Umiarkowany</span>
+      <span class="leg" style="right:0.75rem;top:1.75rem">Silny</span>
       <span id="legInfo" style="left:0.75rem;top:3rem"></span>
     </div>
 
@@ -264,14 +266,15 @@ applyScale();
 function isPortrait() { return window.innerHeight > window.innerWidth; }
 
 // ===================== stan =====================
-// siatka ogólna (wiatr, tło): 11 x 14 punktów na obszarze 6 x 9 stopni
-var ROWS = 9, COLS = 11, LAT_SPAN = 6, LON_SPAN = 9;
+// siatka ogólna (wiatr, tło): 7 x 9 punktów na obszarze 6 x 9 stopni
+var ROWS = 7, COLS = 9, LAT_SPAN = 6, LON_SPAN = 9;
+var GRID_MAX_AGE = 90 * 60 * 1000;   // jak często pobierać siatkę od nowa (oszczędność limitu zapytań)
 // siatka dokładna (opady i chmury) wokół Ciebie: 13 x 13 punktów co ok. 5,5 km (ten sam obszar co wcześniej, gęściej)
 var FROWS = 13, FCOLS = 13, F_DLAT = 0.05;
 var state = {
   coord: { lat: 52.2297, lon: 21.0122 }, name: 'Warszawa', usingSearch: false, userLoc: null, centered: false,
   horizon: 12, wind: true, clouds: true, sat: true,
-  grid: null, fine: null, gridFetchedAt: 0, active: [], pos: 0, frame: 0, frame2: 0, sub: 0, timer: null, lastUpdate: 0, reqId: 0,
+  grid: null, fine: null, gridFetchedAt: 0, active: [], pos: 0, frame: 0, frame2: 0, sub: 0, radar: null, inflight: null, timer: null, lastUpdate: 0, reqId: 0,
   nowSeries: null, nowSrc: ''
 };
 try {
@@ -291,27 +294,47 @@ function addRecent(name, lat, lon) {
 // pobieranie JSON z kontrolą błędów i pamięcią podręczną (limit zapytań Open-Meteo)
 var lastErr = '';
 function getJson(url, ttlMin, key) {
+  var stale = null;
   if (key && ttlMin) {
     try {
       var c = JSON.parse(localStorage.getItem('vr_c_' + key) || 'null');
-      if (c && c.url === url && Date.now() - c.t < ttlMin * 60000) return Promise.resolve(c.j);
+      if (c && c.url === url) {
+        if (Date.now() - c.t < ttlMin * 60000) return Promise.resolve(c.j);
+        stale = c.j;   // starsze dane zostają jako zapas na wypadek błędu lub limitu zapytań
+      }
     } catch (e) {}
   }
   return fetch(url).then(function (r) {
-    if (!r.ok) { lastErr = 'HTTP ' + r.status; throw new Error(lastErr); }
-    return r.json();
+    if (r.ok) return r.json();
+    return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
+      lastErr = 'HTTP ' + r.status + (b && b.reason ? ': ' + b.reason : '');
+      throw new Error(lastErr);
+    });
   }).then(function (j) {
     if (j && j.error) { lastErr = String(j.reason || 'błąd'); throw new Error(lastErr); }
     lastErr = '';
     if (key && ttlMin) { try { localStorage.setItem('vr_c_' + key, JSON.stringify({ url: url, t: Date.now(), j: j })); } catch (e) {} }
     return j;
+  }).catch(function (e) {
+    if (stale) { lastErr = ''; return stale; }
+    throw e;
   });
+}
+
+// krótki, zrozumiały opis błędu (limity zapytań)
+function errText() {
+  var e = lastErr || '';
+  if (/Minutely/i.test(e)) return 'limit zapytań na minutę, spróbuj za chwilę';
+  if (/Hourly/i.test(e)) return 'limit zapytań na godzinę';
+  if (/Daily/i.test(e)) return 'dzienny limit zapytań';
+  if (/429/.test(e)) return 'limit zapytań (429)';
+  return e.length > 50 ? e.slice(0, 50) + '…' : e;
 }
 
 // ===================== pogoda (panel) =====================
 function loadWeather() {
   var c = state.coord;
-  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat + '&longitude=' + c.lon +
+  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat.toFixed(2) + '&longitude=' + c.lon.toFixed(2) +
     '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,pressure_msl,wind_speed_10m,wind_direction_10m' +
     '&hourly=temperature_2m,precipitation_probability,weather_code,is_day' +
     '&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7';
@@ -320,7 +343,7 @@ function loadWeather() {
     state.lastUpdate = Date.now();
     $('upd').textContent = hhmm(new Date());
   }).catch(function () {
-    $('desc').textContent = 'Brak danych pogody' + (lastErr ? ' (' + lastErr + ')' : '');
+    $('desc').textContent = 'Brak danych pogody' + (lastErr ? ' (' + errText() + ')' : '');
   });
 }
 
@@ -394,7 +417,7 @@ function fetchGrid(center) {
   }
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') + '&longitude=' + lons.join(',') +
     '&hourly=precipitation,cloud_cover,wind_speed_10m,wind_direction_10m&past_days=1&forecast_days=3&timeformat=unixtime';
-  return getJson(url, 40, 'grid').then(function (root) {
+  return getJson(url, 60, 'grid').then(function (root) {
     return buildGrid(root, ROWS, COLS, { latMax: latMax, lonMin: lonMin, dLat: dLat, dLon: dLon, center: center }, true);
   });
 }
@@ -408,26 +431,28 @@ function fetchFine(center) {
   }
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') + '&longitude=' + lons.join(',') +
     '&hourly=precipitation,cloud_cover&past_days=1&forecast_days=3&timeformat=unixtime';
-  return getJson(url, 40, 'fine').then(function (root) {
+  return getJson(url, 60, 'fine').then(function (root) {
     return buildGrid(root, FROWS, FCOLS, { latMax: latMax, lonMin: lonMin, dLat: dLat, dLon: dLon, center: center }, false);
   });
 }
 
 function loadForecast() {
-  var id = ++state.reqId, c = { lat: state.coord.lat, lon: state.coord.lon };
+  var id = ++state.reqId, c = { lat: Math.round(state.coord.lat * 10) / 10, lon: Math.round(state.coord.lon * 10) / 10 };
+  state.inflight = c;
   var fineP = fetchFine(c).catch(function () { return null; });
   fetchGrid(c).then(function (g) { return fineP.then(function (f) { return [g, f]; }); }).then(function (res) {
     if (id !== state.reqId) return;
+    state.inflight = null;
     var g = res[0], f = res[1];
     if (f && (f.times.length !== g.times.length || f.times[0] !== g.times[0])) f = null;
     state.grid = g; state.fine = f; state.gridFetchedAt = Date.now();
     $('res').textContent = '· siatka ~' + (f ? '5' : '35') + ' km';
     geo.key = '';
-    stopPlay();
-    setupForecast();
+    if (state.horizon !== 0) { stopPlay(); setupForecast(); }
     renderNowcast();
   }).catch(function () {
-    if (!state.grid) $('caption').textContent = 'Prognoza niedostępna' + (lastErr ? ' (' + lastErr + ')' : '');
+    if (id === state.reqId) state.inflight = null;
+    if (!state.grid) $('caption').textContent = 'Prognoza niedostępna' + (lastErr ? ' (' + errText() + ')' : '');
   });
 }
 
@@ -444,10 +469,13 @@ function computeActive() {
 
 // w widoku 12 h pokazujemy klatki co 15 min (4 na godzinę, płynne przejście między godzinami), w pozostałych co godzinę
 function steps() { return state.horizon === 12 ? 4 : 1; }
-function total() { return state.active.length ? (state.active.length - 1) * steps() + 1 : 0; }
+function total() {
+  if (state.horizon === 0) return state.radar ? state.radar.frames.length : 0;
+  return state.active.length ? (state.active.length - 1) * steps() + 1 : 0;
+}
 
 function setupForecast() {
-  var g = state.grid; if (!g) return;
+  var g = state.grid; if (!g || state.horizon === 0) return;
   state.active = computeActive();
   if (!state.active.length) { $('caption').textContent = 'Brak danych dla wybranego okresu'; $('tlabel').textContent = '--:--'; return; }
   $('slider').max = Math.max(total() - 1, 1);
@@ -478,6 +506,7 @@ function labelFor(ts) {
 }
 
 function showFrame(pos) {
+  if (state.horizon === 0) { showRadar(pos); return; }
   var g = state.grid, n = total(); if (!g || pos < 0 || pos >= n) return;
   var st = steps(), i = Math.floor(pos / st), sub = pos - i * st;
   state.pos = pos; state.frame = state.active[i];
@@ -491,13 +520,175 @@ function showFrame(pos) {
 
 function startPlay() {
   if (state.timer || total() < 2) return;
-  var ms = steps() > 1 ? 240 : (state.active.length > 30 ? 450 : 700);
+  var ms = state.horizon === 0 ? 500 : (steps() > 1 ? 240 : (state.active.length > 30 ? 450 : 700));
   state.timer = setInterval(function () { showFrame((state.pos + 1) % total()); }, ms);
   $('play').textContent = '❚❚';
 }
 function stopPlay() {
   if (state.timer) { clearInterval(state.timer); state.timer = null; }
   $('play').textContent = '▶︎';
+}
+
+// ===================== radar (RainViewer, dane z radarów IMGW) =====================
+// Darmowe API: ostatnie 2 h co 10 min, kafelki do zoomu 7 (wyżej obraz jest powiększany), limit 100 zapytań/min z jednego IP.
+var RV_URL = 'https://api.rainviewer.com/public/weather-maps.json';
+var rrT = null, radarGen = 0;
+
+// ile klatek można wczytać, żeby nie przekroczyć limitu zapytań (zależy od tego, ile kafelków widać na ekranie)
+function radarBudget() {
+  var size = map.getSize(), Z = map.getZoom(), zn = Math.min(Z, 7), sc = Math.pow(2, zn - Z);
+  var per = (Math.ceil(size.x * sc / 256) + 1) * (Math.ceil(size.y * sc / 256) + 1);
+  return Math.max(3, Math.min(13, Math.floor(90 / per)));
+}
+
+function radarSelect(all, forceTime) {
+  var n = all.length, k = Math.min(n, radarBudget()), out = [], used = {}, j, idx, has = false;
+  for (j = 0; j < k; j++) {
+    idx = k === 1 ? n - 1 : Math.round(j * (n - 1) / (k - 1));
+    if (!used[idx]) { used[idx] = 1; out.push({ time: all[idx].time, path: all[idx].path, layer: null, loaded: false }); }
+  }
+  if (forceTime) {
+    for (j = 0; j < out.length; j++) if (out[j].time === forceTime) has = true;
+    if (!has) for (j = 0; j < n; j++) if (all[j].time === forceTime) { out.push({ time: all[j].time, path: all[j].path, layer: null, loaded: false }); break; }
+  }
+  out.sort(function (a, b) { return a.time - b.time; });
+  return out;
+}
+
+function updateRadarCaption(done) {
+  var R = state.radar; if (!R) return;
+  var loaded = 0, i, t;
+  for (i = 0; i < R.frames.length; i++) if (R.frames[i].loaded) loaded++;
+  if (!done) t = 'Radar: wczytywanie ' + loaded + '/' + R.frames.length + '...';
+  else {
+    t = 'Radar (RainViewer): ostatnie 2 h' + (R.frames.length > 1 ? ', ' + R.frames.length + ' klatek' : '');
+    if (R.err > 0) t += ' · brak części kafelków';
+  }
+  $('caption').textContent = t;
+}
+
+// wiatr na mapie w trybie radaru: najbliższa godzina z modelu (dane z przeszłości są w siatce)
+function radarWind(t) {
+  var g = state.grid; if (!g) return;
+  var best = 0, bd = 1e12, i, d;
+  for (i = 0; i < g.times.length; i++) { d = Math.abs(g.times[i] - t); if (d < bd) { bd = d; best = i; } }
+  state.frame = best; state.frame2 = best; state.sub = 0;
+  paintWind();
+}
+
+function showRadar(pos) {
+  var R = state.radar; if (!R) return;
+  var n = R.frames.length, k = 0;
+  if (!n) return;
+  if (pos < 0) pos = 0; if (pos >= n) pos = n - 1;
+  while (k < n && !R.frames[pos].loaded) { pos = (pos + 1) % n; k++; }   // nie pokazuj klatek, które się jeszcze nie wczytały
+  if (k >= n) return;
+  if (R.shown !== null && R.shown !== pos && R.frames[R.shown] && R.frames[R.shown].layer) R.frames[R.shown].layer.setOpacity(0);
+  R.frames[pos].layer.setOpacity(0.85);
+  R.shown = pos; state.pos = pos;
+  $('slider').value = pos;
+  $('tlabel').textContent = 'radar ' + labelFor(R.frames[pos].time);
+  radarWind(R.frames[pos].time);
+}
+
+function radarDone(gen) {
+  var R = state.radar; if (!R || R.gen !== gen || state.horizon !== 0) return;
+  updateRadarCaption(true);
+  if (!state.timer) startPlay();
+}
+
+// wczytywanie klatek po kolei (od najnowszej), żeby nie wysyłać wszystkich zapytań naraz
+function radarStage(gen) {
+  var R = state.radar; if (!R || R.gen !== gen || state.horizon !== 0) return;
+  var i = -1, k;
+  for (k = R.frames.length - 1; k >= 0; k--) if (!R.frames[k].layer) { i = k; break; }
+  if (i < 0) { radarDone(gen); return; }
+  var fr = R.frames[i], finished = false;
+  var layer = L.tileLayer(R.host + fr.path + '/256/{z}/{x}/{y}/2/1_1.png',
+    { pane: 'radar', maxNativeZoom: 7, maxZoom: 18, opacity: 0, updateWhenIdle: true, keepBuffer: 1 });
+  fr.layer = layer;
+  function fin() {
+    if (finished) return; finished = true;
+    var cur = state.radar; if (!cur || cur.gen !== gen) return;
+    fr.loaded = true;
+    if (cur.shown === null) showRadar(i);
+    updateRadarCaption(false);
+    radarStage(gen);
+  }
+  layer.once('load', fin);
+  layer.on('tileerror', function () { var c = state.radar; if (c && c.gen === gen) c.err++; });
+  setTimeout(fin, 6000);
+  layer.addTo(map);
+}
+
+function radarStart(host, all, force) {
+  var old = state.radar, keep = null, frames, shown = null, i, j;
+  if (old && old.shown !== null && old.frames[old.shown]) keep = old.frames[old.shown];
+  frames = radarSelect(all, force && keep ? keep.time : 0);
+  if (old) {
+    for (i = 0; i < old.frames.length; i++) {
+      var of = old.frames[i], reused = false;
+      if (of === keep && of.layer) {   // wyświetlaną klatkę zostawiamy, żeby obraz nie mrugał
+        for (j = 0; j < frames.length; j++) if (frames[j].time === of.time) { frames[j].layer = of.layer; frames[j].loaded = of.loaded; shown = j; reused = true; }
+      }
+      if (!reused && of.layer) map.removeLayer(of.layer);
+    }
+  }
+  var gen = ++radarGen;
+  state.radar = { host: host, all: all, frames: frames, shown: shown, gen: gen, err: 0, newest: all[all.length - 1].time };
+  $('slider').max = Math.max(frames.length - 1, 1);
+  if (shown !== null) { frames[shown].layer.setOpacity(0.85); state.pos = shown; }
+  updateRadarCaption(false);
+  radarStage(gen);
+}
+
+function fetchRadar(cb) {
+  getJson(RV_URL, 4, 'rv').then(function (j) {
+    if (state.horizon !== 0) return;
+    var past = j && j.radar && j.radar.past, all = [], i;
+    if (!past || !past.length || !j.host) throw new Error('brak danych');
+    for (i = 0; i < past.length; i++) all.push({ time: past[i].time, path: past[i].path });
+    all.sort(function (a, b) { return a.time - b.time; });
+    cb(j.host, all);
+  }).catch(function () {
+    if (state.horizon === 0 && !state.radar) $('caption').textContent = 'Radar niedostępny' + (lastErr ? ' (' + errText() + ')' : '');
+  });
+}
+
+function enterRadar() {
+  leaveRadar();
+  wxCanvas.style.display = 'none';
+  $('legend').className = 'glass radar'; updateLegend();
+  $('caption').textContent = 'Radar: wczytywanie...'; $('tlabel').textContent = '--:--';
+  fetchRadar(function (host, all) { radarStart(host, all, false); });
+}
+
+function leaveRadar() {
+  clearTimeout(rrT);
+  var R = state.radar, i;
+  radarGen++;   // unieważnia wczytywanie w toku
+  if (R) for (i = 0; i < R.frames.length; i++) if (R.frames[i].layer) map.removeLayer(R.frames[i].layer);
+  state.radar = null;
+  if (wxCanvas) wxCanvas.style.display = '';
+  $('legend').className = 'glass';
+}
+
+function refreshRadar() {
+  fetchRadar(function (host, all) {
+    var R = state.radar;
+    if (!R) { radarStart(host, all, false); return; }
+    if (R.newest !== all[all.length - 1].time) { stopPlay(); radarStart(host, all, false); }
+  });
+}
+
+// po przesunięciu / zmianie zoomu mapy kafelki trzeba wczytać na nowo (z ponownym przeliczeniem limitu)
+function radarMoved() {
+  if (state.horizon !== 0 || !state.radar) return;
+  clearTimeout(rrT); rrT = setTimeout(radarRebuild, 700);
+}
+function radarRebuild() {
+  var R = state.radar; if (!R || state.horizon !== 0) return;
+  stopPlay(); radarStart(R.host, R.all, true);
 }
 
 // ===================== ostrzeżenie o deszczu (nowcast) =====================
@@ -522,7 +713,7 @@ function seriesFromGrid() {
 
 function loadNowcast() {
   var id = ++ncReq, c = state.coord;
-  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat + '&longitude=' + c.lon +
+  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat.toFixed(2) + '&longitude=' + c.lon.toFixed(2) +
     '&minutely_15=precipitation&forecast_days=2&timeformat=unixtime';
   getJson(url, 4, 'nc').then(function (j) {
     if (id !== ncReq) return;
@@ -598,24 +789,23 @@ var RAIN_STOP = [0.1, 0.5, 1, 2.5, 5, 10, 20];   // mm/h odpowiadające kolejnym
 var cloudA = new Float32Array(101);
 for (var ci = 0; ci <= 100; ci++) cloudA[ci] = Math.pow(ci / 100, 1.2) * 0.5;
 
-// ciągła skala kolorów opadu (zamiast twardych stopni): tablica indeksowana pierwiastkiem z natężenia,
-// dzięki czemu słaby deszcz ma drobny krok i brzeg plamy znika łagodnie
-var LUT_N = 512, LUT_MAX = 30;
+// skala opadu w wyraźnych stopniach (7 kolorów, jak w pierwszej wersji), ale granice między stopniami są tylko
+// wąsko wygładzone (kilka pikseli), więc kolor jest czytelny, a krawędzie nie są ząbkowane.
+// Tablica indeksowana pierwiastkiem z natężenia - drobny krok także przy słabym deszczu.
+var LUT_N = 1024, LUT_MAX = 30, BAND_THR = [0.5, 1, 2.5, 5, 10, 20], BAND_SOFT = 0.18;   // BAND_SOFT: szerokość przejścia (w skali logarytmicznej)
 var lutR = new Uint8Array(LUT_N), lutG = new Uint8Array(LUT_N), lutB = new Uint8Array(LUT_N), lutA = new Float32Array(LUT_N);
 (function () {
   for (var i = 0; i < LUT_N; i++) {
-    var q = i / (LUT_N - 1), p = LUT_MAX * q * q, k = 0, u = 0;
-    if (p <= RAIN_STOP[0]) { k = 0; u = 0; }
-    else if (p >= RAIN_STOP[6]) { k = 5; u = 1; }
-    else {
-      while (k < 5 && p >= RAIN_STOP[k + 1]) k++;
-      u = (Math.log(p) - Math.log(RAIN_STOP[k])) / (Math.log(RAIN_STOP[k + 1]) - Math.log(RAIN_STOP[k]));
-    }
-    lutR[i] = Math.round(RAIN_COL[k * 3] + (RAIN_COL[k * 3 + 3] - RAIN_COL[k * 3]) * u);
-    lutG[i] = Math.round(RAIN_COL[k * 3 + 1] + (RAIN_COL[k * 3 + 4] - RAIN_COL[k * 3 + 1]) * u);
-    lutB[i] = Math.round(RAIN_COL[k * 3 + 2] + (RAIN_COL[k * 3 + 5] - RAIN_COL[k * 3 + 2]) * u);
-    var t = Math.max(0, Math.min(1, (p - 0.03) / 0.3));
-    lutA[i] = 0.82 * t * t * (3 - 2 * t);
+    var q = i / (LUT_N - 1), p = LUT_MAX * q * q, lv = 0, j, a = 0, b = 0, t = 0;
+    for (j = 0; j < 6; j++) if (p >= BAND_THR[j]) lv = j + 1;
+    a = lv; b = lv;
+    if (lv > 0) { var uLow = Math.log(p / BAND_THR[lv - 1]) / BAND_SOFT; if (uLow < 0.5) { a = lv - 1; b = lv; t = 0.5 + uLow; } }
+    if (lv < 6) { var uUp = Math.log(p / BAND_THR[lv]) / BAND_SOFT; if (uUp > -0.5) { a = lv; b = lv + 1; t = uUp + 0.5; } }
+    lutR[i] = Math.round(RAIN_COL[a * 3] + (RAIN_COL[b * 3] - RAIN_COL[a * 3]) * t);
+    lutG[i] = Math.round(RAIN_COL[a * 3 + 1] + (RAIN_COL[b * 3 + 1] - RAIN_COL[a * 3 + 1]) * t);
+    lutB[i] = Math.round(RAIN_COL[a * 3 + 2] + (RAIN_COL[b * 3 + 2] - RAIN_COL[a * 3 + 2]) * t);
+    var e = Math.max(0, Math.min(1, (p - 0.06) / 0.2));   // brzeg plamy: wąskie, gładkie wejście
+    lutA[i] = 0.84 * e * e * (3 - 2 * e);
   }
 })();
 
@@ -693,7 +883,7 @@ function hpass(g, V, A, w, out) {
 function mixIn(out, tmp, t) { for (var i = 0, n = out.length; i < n; i++) out[i] += (tmp[i] - out[i]) * t; }
 
 function paintWx() {
-  var g = state.grid; if (!g || !ensureGeometry()) return;
+  var g = state.grid; if (state.horizon === 0 || !g || !ensureGeometry()) return;
   var f = state.frame, fg = state.fine, A = geo.A, B = geo.B, w = geo.w, h = geo.h;
   var tb = state.sub || 0, f2 = state.frame2, blend = tb > 0 && f2 !== f;
   hpass(g, g.precip[f], A, w, geo.aP); hpass(g, g.cloud[f], A, w, geo.aC);
@@ -737,7 +927,7 @@ function paintWx() {
       if (p < 0) p = 0;
       if (cv < 0) cv = 0; else if (cv > 100) cv = 100;   // bikubiczna może minimalnie wyjść poza zakres
       var ra = 0, rr = 0, rg = 0, rb = 0;
-      if (p > 0.03) {
+      if (p > 0.06) {
         var li = Math.round(Math.sqrt(p / LUT_MAX) * (LUT_N - 1)); if (li > LUT_N - 1) li = LUT_N - 1;
         ra = lutA[li]; rr = lutR[li]; rg = lutG[li]; rb = lutB[li];
       }
@@ -838,7 +1028,11 @@ function reverseName(lat, lon) {
 
 function refreshGridIfFar() {
   var g = state.grid;
-  if (!g) { loadForecast(); return; }
+  if (!g) {
+    var fl = state.inflight;   // pobieranie już trwa dla tego miejsca - nie wysyłamy drugiego
+    if (fl && Math.abs(fl.lat - state.coord.lat) * 111 + Math.abs(fl.lon - state.coord.lon) * 68 < 20) return;
+    loadForecast(); return;
+  }
   var d = Math.abs(g.center.lat - state.coord.lat) * 111 + Math.abs(g.center.lon - state.coord.lon) * 68;
   if (d > 20) loadForecast();
 }
@@ -916,6 +1110,7 @@ start = function () {
   satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17, opacity: 0.72 });
   darkLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 16 });
   map.createPane('pin'); map.getPane('pin').style.zIndex = 640;
+  map.createPane('radar'); map.getPane('radar').style.zIndex = 410; map.getPane('radar').style.pointerEvents = 'none';
   map.createPane('labels'); map.getPane('labels').style.zIndex = 500; map.getPane('labels').style.pointerEvents = 'none';
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17, pane: 'labels' }).addTo(map);
   satLayer.addTo(map);
@@ -928,7 +1123,7 @@ start = function () {
 
   map.on('zoomstart', function () { wxCanvas.style.opacity = 0; windCanvas.style.opacity = 0; });
   map.on('zoomend', function () { geo.key = ''; paintAll(); wxCanvas.style.opacity = 1; windCanvas.style.opacity = 1; });
-  map.on('moveend', function () { paintAll(); });
+  map.on('moveend', function () { paintAll(); radarMoved(); });
   function relayout() { applyScale(); map.invalidateSize(); geo.key = ''; paintAll(); }
   window.addEventListener('resize', relayout);
   window.addEventListener('orientationchange', function () { setTimeout(relayout, 300); });
@@ -942,6 +1137,8 @@ start = function () {
     var h = e.target.getAttribute && e.target.getAttribute('data-h'); if (!h) return;
     var kids = $('seg').children; for (var i = 0; i < kids.length; i++) kids[i].className = kids[i] === e.target ? 'on' : '';
     state.horizon = +h; stopPlay();
+    if (state.horizon === 0) { enterRadar(); return; }
+    leaveRadar(); updateLegend();
     if (state.grid) setupForecast(); else { $('caption').textContent = 'Ładowanie prognozy...'; loadForecast(); }
   });
   $('btnClouds').addEventListener('click', function () { state.clouds = !state.clouds; this.className = 'btn' + (state.clouds ? ' on' : ''); updateLegend(); paintWx(); });
@@ -984,18 +1181,21 @@ start = function () {
   // ładowanie danych
   loadWeather(); loadForecast(); loadNowcast(); useGps(false);
 
-  setInterval(function () { loadWeather(); if (Date.now() - state.gridFetchedAt > 3600 * 1000) loadForecast(); else rebuildWindow(); }, 10 * 60 * 1000);
+  setInterval(function () { loadWeather(); if (Date.now() - state.gridFetchedAt > GRID_MAX_AGE) loadForecast(); else rebuildWindow(); }, 10 * 60 * 1000);
   setInterval(loadNowcast, 5 * 60 * 1000);
   setInterval(renderNowcast, 30 * 1000);
+  setInterval(function () { if (state.horizon === 0) refreshRadar(); }, 5 * 60 * 1000);
   function wake() {
-    if (Date.now() - state.lastUpdate > 2 * 60 * 1000) { loadWeather(); if (Date.now() - state.gridFetchedAt > 3600 * 1000) loadForecast(); loadNowcast(); }
+    if (Date.now() - state.lastUpdate > 2 * 60 * 1000) { loadWeather(); if (Date.now() - state.gridFetchedAt > GRID_MAX_AGE) loadForecast(); loadNowcast(); }
     rebuildWindow(); renderNowcast();
+    if (state.horizon === 0) refreshRadar();
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) wake(); });
   window.addEventListener('pageshow', wake);
 };
 
 function updateLegend() {
+  if (state.horizon === 0) { $('legInfo').textContent = 'Radar: zmierzone opady (RainViewer, dane IMGW)'; return; }
   var parts = [];
   if (state.clouds) parts.push('Biel: chmury');
   if (state.wind) parts.push('Strzałki: wiatr');
