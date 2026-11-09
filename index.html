@@ -66,21 +66,17 @@
   #hscroll::-webkit-scrollbar { display:none; }
   .leaflet-container { background:#0a1221; font-family:inherit; }
   .glass { background:rgba(10,18,33,.82); border-radius:12px; position:absolute; z-index:1000; }
-  .btn { height:34px; line-height:34px; padding:0 14px; border-radius:8px; font-size:15px; font-weight:600;
-    background:rgba(10,18,33,.82); position:absolute; top:14px; text-align:center; z-index:1000; }
+  #toolbar { position:absolute; z-index:1000; left:14px; top:14px; display:-webkit-flex; display:flex; -webkit-align-items:center; align-items:center; }
+  #seg { display:-webkit-flex; display:flex; height:31px; border-radius:7px; background:rgba(10,18,33,.82); overflow:hidden; margin-right:8px; }
+  #seg div { padding:0 14px; line-height:31px; font-size:13.5px; font-weight:600; white-space:nowrap; }
+  #seg div.on { background:#2285ff; }
+  .btn { height:31px; line-height:31px; padding:0 12px; border-radius:7px; font-size:13.5px; font-weight:600; background:rgba(10,18,33,.82); margin-right:8px; white-space:nowrap; text-align:center; }
   .btn.on { background:#2285ff; }
-  #seg { position:absolute; z-index:1000; left:14px; top:14px; height:34px; width:190px; border-radius:8px; background:rgba(10,18,33,.82); overflow:hidden; display:-webkit-flex; display:flex; }
-  #seg div { -webkit-flex:1; flex:1; text-align:center; line-height:34px; font-size:15px; font-weight:600; }
-  #seg div.on { background:#2285ff; border-radius:8px; }
-  #btnClouds { left:214px; width:92px; }
-  #btnWind { left:316px; width:82px; }
-  #btnBase { left:408px; width:104px; }
-  #locate { right:14px; top:14px; width:44px; height:44px; border-radius:22px; font-size:26px; line-height:44px; text-align:center; padding:0; }
+  #locate { position:absolute; z-index:1000; right:14px; top:14px; margin:0; width:40px; height:40px; border-radius:20px; font-size:24px; line-height:40px; padding:0; }
   #legend { left:14px; bottom:92px; width:400px; height:72px; }
-  #legBar { position:absolute; left:12px; top:10px; width:376px; height:12px; border-radius:6px;
-    background:-webkit-linear-gradient(left,#5999ff,#33c2e6,#33cc4d,#ffe633,#ff8c1a,#e61a1a,#b333cc);
-    background:linear-gradient(to right,#5999ff,#33c2e6,#33cc4d,#ffe633,#ff8c1a,#e61a1a,#b333cc); }
-  #legendBox span { position:absolute; font-size:11px; color:rgba(255,255,255,.6); }
+  #legBar { position:absolute; left:12px; top:10px; width:376px; height:12px; border-radius:6px; overflow:hidden; display:-webkit-flex; display:flex; }
+  #legBar i { -webkit-flex:1; flex:1; display:block; }
+  #legend span { position:absolute; font-size:11px; line-height:14px; color:rgba(255,255,255,.7); white-space:nowrap; }
   #bar { left:14px; bottom:14px; right:194px; height:64px; }
   #play { position:absolute; left:10px; top:10px; width:44px; height:44px; border-radius:22px; background:#2285ff;
     text-align:center; line-height:44px; font-size:20px; font-weight:700; }
@@ -139,14 +135,16 @@
   <div id="mapwrap">
     <div id="map"></div>
 
-    <div id="seg"><div data-h="12" class="on">12h</div><div data-h="24">24h</div><div data-h="48">48h</div></div>
-    <div class="btn on" id="btnClouds">☁️ Chmury</div>
-    <div class="btn on" id="btnWind">💨 Wiatr</div>
-    <div class="btn" id="btnBase">🛰 Satelita</div>
+    <div id="toolbar">
+      <div id="seg"><div data-h="12" class="on">12h</div><div data-h="24">24h</div><div data-h="48">48h</div></div>
+      <div class="btn on" id="btnClouds">☁️ Chmury</div>
+      <div class="btn on" id="btnWind">💨 Wiatr</div>
+      <div class="btn" id="btnBase">🛰 Satelita</div>
+    </div>
     <div class="btn" id="locate">◎</div>
 
     <div class="glass" id="legend">
-      <div id="legBar"></div>
+      <div id="legBar"><i style="background:#8fd0ff"></i><i style="background:#3b8bff"></i><i style="background:#2fc24a"></i><i style="background:#ffe033"></i><i style="background:#ff9a1f"></i><i style="background:#e5261f"></i><i style="background:#b233cc"></i></div>
       <span style="left:12px;top:28px">Słaby deszcz</span>
       <span style="left:0;width:100%;text-align:center;top:28px">Umiarkowany</span>
       <span style="right:12px;top:28px">Silny</span>
@@ -235,7 +233,7 @@ function wmoText(c) {
 }
 
 // ===================== stan =====================
-var ROWS = 11, COLS = 14, LAT_SPAN = 9, LON_SPAN = 12;
+var ROWS = 11, COLS = 14, LAT_SPAN = 3.0, LON_SPAN = 4.5;   // gęsta siatka wokół Twojej lokalizacji (ok. 33 x 24 km)
 var state = {
   coord: { lat: 52.2297, lon: 21.0122 }, name: 'Warszawa', usingSearch: false, userLoc: null,
   horizon: 12, wind: true, clouds: true, sat: true,
@@ -366,7 +364,7 @@ function setupForecast() {
   $('slider').max = Math.max(state.active.length - 1, 1);
   var now = Date.now() / 1000, i;
   if (state.horizon === 12) {
-    $('caption').textContent = '12 godzin: od 2 h wstecz do 10 h w przód';
+    $('caption').textContent = '12 h: 2 h wstecz, 10 h w przód';
     state.pos = 0;
     for (i = 0; i < state.active.length; i++) { if (g.times[state.active[i]] >= now) { state.pos = i; break; } }
   } else {
@@ -415,31 +413,17 @@ var map, wxCanvas, wxCtx, windCanvas, windCtx, userMarker, searchMarker, satLaye
 var geo = { key: '' };
 
 // tablice kolorów opadów (mm/h) -> RGBA
-var RAIN_STOPS = [[0.02, 90, 153, 255, 0], [0.1, 90, 153, 255, .45], [0.5, 51, 191, 242, .65], [1, 51, 204, 77, .72],
-                  [2.5, 255, 230, 51, .78], [5, 255, 140, 26, .82], [10, 230, 26, 26, .85], [20, 179, 51, 204, .90]];
-var LUT_N = 1024, lutR = new Float32Array(LUT_N), lutG = new Float32Array(LUT_N), lutB = new Float32Array(LUT_N), lutA = new Float32Array(LUT_N);
-(function buildLut() {
-  for (var i = 0; i < LUT_N; i++) {
-    var t = i / (LUT_N - 1), mm = t * t * 20;   // skala pierwiastkowa - więcej precyzji dla słabych opadów
-    var s = RAIN_STOPS, r = 0, g = 0, b = 0, a = 0;
-    if (mm <= s[0][0]) { a = 0; }
-    else if (mm >= s[s.length - 1][0]) { var l = s[s.length - 1]; r = l[1]; g = l[2]; b = l[3]; a = l[4]; }
-    else for (var k = 1; k < s.length; k++) if (mm < s[k][0]) {
-      var p = s[k - 1], q = s[k], u = (mm - p[0]) / (q[0] - p[0]);
-      r = p[1] + (q[1] - p[1]) * u; g = p[2] + (q[2] - p[2]) * u; b = p[3] + (q[3] - p[3]) * u; a = p[4] + (q[4] - p[4]) * u; break;
-    }
-    lutR[i] = r; lutG[i] = g; lutB[i] = b; lutA[i] = a;
-  }
-})();
+// opady: sztywne przedziały (mm/h), każdy jednym kolorem
+var RAIN_COL = [143,208,255,  59,139,255,  47,194,74,  255,224,51,  255,154,31,  229,38,31,  178,51,204];
 var cloudA = new Float32Array(101);
-for (var ci = 0; ci <= 100; ci++) cloudA[ci] = Math.min(0.88, Math.pow(ci / 100, 1.1) * 0.9);
+for (var ci = 0; ci <= 100; ci++) cloudA[ci] = Math.pow(ci / 100, 1.2) * 0.5;
 
 function ensureGeometry() {
   var g = state.grid; if (!g || !map) return false;
   var size = map.getSize(), z = map.getZoom(), c = map.getCenter();
   var key = g.id + '|' + z + '|' + c.lat.toFixed(5) + '|' + c.lng.toFixed(5) + '|' + size.x + 'x' + size.y;
   if (geo.key === key) return true;
-  var S = 4, w = Math.ceil(size.x / S), h = Math.ceil(size.y / S), x, y;
+  var S = 6, w = Math.ceil(size.x / S), h = Math.ceil(size.y / S), x, y;
   geo.S = S; geo.w = w; geo.h = h;
   geo.rowT = new Float32Array(h); geo.colT = new Float32Array(w);
   geo.rowOk = new Uint8Array(h); geo.r0 = new Int32Array(h); geo.r1 = new Int32Array(h); geo.wr = new Float32Array(h);
@@ -480,14 +464,15 @@ function paintWx() {
         var cv = (C[a] * (1 - wc) + C[b] * wc) * (1 - wr) + (C[c] * (1 - wc) + C[d] * wc) * wr;
         ca = cloudA[Math.max(0, Math.min(100, Math.round(cv)))];
       }
-      var li = p <= 0.02 ? 0 : Math.min(LUT_N - 1, Math.floor(Math.sqrt(p / 20) * (LUT_N - 1)));
-      var ra = lutA[li];
+      var lv = p < 0.1 ? -1 : p < 0.5 ? 0 : p < 1 ? 1 : p < 2.5 ? 2 : p < 5 ? 3 : p < 10 ? 4 : p < 20 ? 5 : 6;
+      var ra = lv < 0 ? 0 : 0.82;
+      var rr = lv < 0 ? 0 : RAIN_COL[lv * 3], rg = lv < 0 ? 0 : RAIN_COL[lv * 3 + 1], rb = lv < 0 ? 0 : RAIN_COL[lv * 3 + 2];
       var oa = ra + ca * (1 - ra);
       if (oa < 0.004) { data[o + 3] = 0; continue; }
       var wR = ra / oa, wC = ca * (1 - ra) / oa;
-      data[o] = lutR[li] * wR + 237 * wC;
-      data[o + 1] = lutG[li] * wR + 242 * wC;
-      data[o + 2] = lutB[li] * wR + 255 * wC;
+      data[o] = rr * wR + 237 * wC;
+      data[o + 1] = rg * wR + 242 * wC;
+      data[o + 2] = rb * wR + 255 * wC;
       data[o + 3] = oa * 255 * geo.rowT[y] * geo.colT[x];   // łagodne zanikanie przy brzegu siatki
     }
   }
@@ -545,10 +530,10 @@ function updateMarkers() {
   if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
   if (searchMarker) { map.removeLayer(searchMarker); searchMarker = null; }
   if (state.usingSearch) {
-    searchMarker = L.circleMarker([state.coord.lat, state.coord.lon], { radius: 8, color: '#fff', weight: 2, fillColor: '#ff7a1a', fillOpacity: 1 }).addTo(map);
+    searchMarker = L.circleMarker([state.coord.lat, state.coord.lon], { pane: 'pin', radius: 9, color: '#fff', weight: 2, fillColor: '#ff7a1a', fillOpacity: 1 }).addTo(map);
     searchMarker.bindTooltip(state.name, { permanent: true, direction: 'right', offset: [10, 0] });
   } else {
-    userMarker = L.circleMarker([state.coord.lat, state.coord.lon], { radius: 8, color: '#fff', weight: 2.5, fillColor: '#1e78ff', fillOpacity: 1 }).addTo(map);
+    userMarker = L.circleMarker([state.coord.lat, state.coord.lon], { pane: 'pin', radius: 9, color: '#fff', weight: 3, fillColor: '#1e78ff', fillOpacity: 1 }).addTo(map);
   }
 }
 
@@ -570,7 +555,7 @@ function useGps(closeZoom) {
     var moved = Math.abs(c.lat - state.coord.lat) + Math.abs(c.lon - state.coord.lon) > 0.01;
     state.coord = c; save();
     updateMarkers();
-    if (closeZoom) map.setView([c.lat, c.lon], 12); else if (!state.centered) { map.setView([c.lat, c.lon], 6); }
+    if (closeZoom) map.setView([c.lat, c.lon], 12); else if (!state.centered) { map.setView([c.lat, c.lon], 10); }
     state.centered = true;
     reverseName(c.lat, c.lon);
     loadWeather();
@@ -582,7 +567,7 @@ function refreshGridIfFar() {
   var g = state.grid;
   if (!g) { loadForecast(); return; }
   var d = Math.abs(g.center.lat - state.coord.lat) * 111 + Math.abs(g.center.lon - state.coord.lon) * 68;
-  if (d > 50) loadForecast();
+  if (d > 20) loadForecast();
 }
 
 function locateTapped() {
@@ -634,12 +619,13 @@ function chooseResult(r) {
 // ===================== start =====================
 start = function () {
   map = L.map('map', { zoomControl: false, attributionControl: false, zoomSnap: 1, inertia: true });
-  satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17 });
+  satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17, opacity: 0.72 });
   darkLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 16 });
+  map.createPane('pin'); map.getPane('pin').style.zIndex = 640;
   map.createPane('labels'); map.getPane('labels').style.zIndex = 500; map.getPane('labels').style.pointerEvents = 'none';
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17, pane: 'labels' }).addTo(map);
   satLayer.addTo(map);
-  map.setView([state.coord.lat, state.coord.lon], 6);
+  map.setView([state.coord.lat, state.coord.lon], 10);
 
   var ov = map.getPanes().overlayPane;
   wxCanvas = document.createElement('canvas'); windCanvas = document.createElement('canvas');
