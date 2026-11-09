@@ -62,13 +62,14 @@
 
   /* mapa */
   #mapwrap { position:relative; -webkit-flex:1; flex:1; background:#0a1221; }
-  #map { position:absolute; left:0; top:0; right:0; bottom:0; background:#0a1221; }
+  #map { position:absolute; left:0; top:0; right:0; bottom:0; background:#0a1221; z-index:0; }
+  #hscroll::-webkit-scrollbar { display:none; }
   .leaflet-container { background:#0a1221; font-family:inherit; }
-  .glass { background:rgba(10,18,33,.82); border-radius:12px; position:absolute; }
+  .glass { background:rgba(10,18,33,.82); border-radius:12px; position:absolute; z-index:1000; }
   .btn { height:34px; line-height:34px; padding:0 14px; border-radius:8px; font-size:15px; font-weight:600;
-    background:rgba(10,18,33,.82); position:absolute; top:14px; text-align:center; }
+    background:rgba(10,18,33,.82); position:absolute; top:14px; text-align:center; z-index:1000; }
   .btn.on { background:#2285ff; }
-  #seg { position:absolute; left:14px; top:14px; height:34px; width:190px; border-radius:8px; background:rgba(10,18,33,.82); overflow:hidden; display:-webkit-flex; display:flex; }
+  #seg { position:absolute; z-index:1000; left:14px; top:14px; height:34px; width:190px; border-radius:8px; background:rgba(10,18,33,.82); overflow:hidden; display:-webkit-flex; display:flex; }
   #seg div { -webkit-flex:1; flex:1; text-align:center; line-height:34px; font-size:15px; font-weight:600; }
   #seg div.on { background:#2285ff; border-radius:8px; }
   #btnClouds { left:214px; width:92px; }
@@ -132,7 +133,7 @@
       <div class="title">Prognoza na 7 dni</div>
       <div id="drows"></div>
     </div>
-    <div id="credits">Dane: Open-Meteo · Mapa: Esri, © OpenStreetMap, © CARTO</div>
+    <div id="credits">Dane: Open-Meteo · Mapa: Esri, © OpenStreetMap</div>
   </div>
 
   <div id="mapwrap">
@@ -431,7 +432,7 @@ var LUT_N = 1024, lutR = new Float32Array(LUT_N), lutG = new Float32Array(LUT_N)
   }
 })();
 var cloudA = new Float32Array(101);
-for (var ci = 0; ci <= 100; ci++) cloudA[ci] = Math.pow(ci / 100, 1.4) * 0.60;
+for (var ci = 0; ci <= 100; ci++) cloudA[ci] = Math.min(0.88, Math.pow(ci / 100, 1.1) * 0.9);
 
 function ensureGeometry() {
   var g = state.grid; if (!g || !map) return false;
@@ -440,17 +441,18 @@ function ensureGeometry() {
   if (geo.key === key) return true;
   var S = 4, w = Math.ceil(size.x / S), h = Math.ceil(size.y / S), x, y;
   geo.S = S; geo.w = w; geo.h = h;
+  geo.rowT = new Float32Array(h); geo.colT = new Float32Array(w);
   geo.rowOk = new Uint8Array(h); geo.r0 = new Int32Array(h); geo.r1 = new Int32Array(h); geo.wr = new Float32Array(h);
   geo.colOk = new Uint8Array(w); geo.c0 = new Int32Array(w); geo.c1 = new Int32Array(w); geo.wc = new Float32Array(w);
   for (y = 0; y < h; y++) {      // szerokość geograficzna zależy tylko od y
     var lat = map.containerPointToLatLng(L.point(0, y * S + S / 2)).lat;
     var fr = (g.latMax - lat) / g.dLat;
-    if (fr >= 0 && fr <= ROWS - 1) { geo.rowOk[y] = 1; var r0 = Math.min(Math.floor(fr), ROWS - 2); geo.r0[y] = r0; geo.r1[y] = r0 + 1; geo.wr[y] = fr - r0; }
+    if (fr >= 0 && fr <= ROWS - 1) { geo.rowOk[y] = 1; geo.rowT[y] = Math.min(1, fr / 1.2, (ROWS - 1 - fr) / 1.2); var r0 = Math.min(Math.floor(fr), ROWS - 2); geo.r0[y] = r0; geo.r1[y] = r0 + 1; geo.wr[y] = fr - r0; }
   }
   for (x = 0; x < w; x++) {      // długość geograficzna zależy tylko od x
     var lng = map.containerPointToLatLng(L.point(x * S + S / 2, 0)).lng;
     var fc = (lng - g.lonMin) / g.dLon;
-    if (fc >= 0 && fc <= COLS - 1) { geo.colOk[x] = 1; var c0 = Math.min(Math.floor(fc), COLS - 2); geo.c0[x] = c0; geo.c1[x] = c0 + 1; geo.wc[x] = fc - c0; }
+    if (fc >= 0 && fc <= COLS - 1) { geo.colOk[x] = 1; geo.colT[x] = Math.min(1, fc / 1.2, (COLS - 1 - fc) / 1.2); var c0 = Math.min(Math.floor(fc), COLS - 2); geo.c0[x] = c0; geo.c1[x] = c0 + 1; geo.wc[x] = fc - c0; }
   }
   wxCanvas.width = w; wxCanvas.height = h;
   wxCanvas.style.width = size.x + 'px'; wxCanvas.style.height = size.y + 'px';
@@ -486,7 +488,7 @@ function paintWx() {
       data[o] = lutR[li] * wR + 237 * wC;
       data[o + 1] = lutG[li] * wR + 242 * wC;
       data[o + 2] = lutB[li] * wR + 255 * wC;
-      data[o + 3] = oa * 255;
+      data[o + 3] = oa * 255 * geo.rowT[y] * geo.colT[x];   // łagodne zanikanie przy brzegu siatki
     }
   }
   wxCtx.putImageData(geo.img, 0, 0);
@@ -633,9 +635,9 @@ function chooseResult(r) {
 start = function () {
   map = L.map('map', { zoomControl: false, attributionControl: false, zoomSnap: 1, inertia: true });
   satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17 });
-  darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19 });
+  darkLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 16 });
   map.createPane('labels'); map.getPane('labels').style.zIndex = 500; map.getPane('labels').style.pointerEvents = 'none';
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, pane: 'labels' }).addTo(map);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17, pane: 'labels' }).addTo(map);
   satLayer.addTo(map);
   map.setView([state.coord.lat, state.coord.lon], 6);
 
