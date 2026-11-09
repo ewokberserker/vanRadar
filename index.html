@@ -265,9 +265,9 @@ function isPortrait() { return window.innerHeight > window.innerWidth; }
 
 // ===================== stan =====================
 // siatka ogólna (wiatr, tło): 11 x 14 punktów na obszarze 6 x 9 stopni
-var ROWS = 11, COLS = 14, LAT_SPAN = 6, LON_SPAN = 9;
+var ROWS = 9, COLS = 11, LAT_SPAN = 6, LON_SPAN = 9;
 // siatka dokładna (opady i chmury) wokół Ciebie: 15 x 15 punktów co ok. 5,5 km
-var FROWS = 15, FCOLS = 15, F_DLAT = 0.05;
+var FROWS = 11, FCOLS = 11, F_DLAT = 0.06;
 var state = {
   coord: { lat: 52.2297, lon: 21.0122 }, name: 'Warszawa', usingSearch: false, userLoc: null, centered: false,
   horizon: 12, wind: true, clouds: true, sat: true,
@@ -288,6 +288,26 @@ function addRecent(name, lat, lon) {
   try { localStorage.setItem('vanradar_recent', JSON.stringify(r.slice(0, 8))); } catch (e) {}
 }
 
+// pobieranie JSON z kontrolą błędów i pamięcią podręczną (limit zapytań Open-Meteo)
+var lastErr = '';
+function getJson(url, ttlMin, key) {
+  if (key && ttlMin) {
+    try {
+      var c = JSON.parse(localStorage.getItem('vr_c_' + key) || 'null');
+      if (c && c.url === url && Date.now() - c.t < ttlMin * 60000) return Promise.resolve(c.j);
+    } catch (e) {}
+  }
+  return fetch(url).then(function (r) {
+    if (!r.ok) { lastErr = 'HTTP ' + r.status; throw new Error(lastErr); }
+    return r.json();
+  }).then(function (j) {
+    if (j && j.error) { lastErr = String(j.reason || 'błąd'); throw new Error(lastErr); }
+    lastErr = '';
+    if (key && ttlMin) { try { localStorage.setItem('vr_c_' + key, JSON.stringify({ url: url, t: Date.now(), j: j })); } catch (e) {} }
+    return j;
+  });
+}
+
 // ===================== pogoda (panel) =====================
 function loadWeather() {
   var c = state.coord;
@@ -295,12 +315,12 @@ function loadWeather() {
     '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,pressure_msl,wind_speed_10m,wind_direction_10m' +
     '&hourly=temperature_2m,precipitation_probability,weather_code,is_day' +
     '&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7';
-  fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+  getJson(url, 8, 'panel').then(function (j) {
     renderWeather(j);
     state.lastUpdate = Date.now();
     $('upd').textContent = hhmm(new Date());
   }).catch(function () {
-    $('desc').textContent = 'Brak danych pogody';
+    $('desc').textContent = 'Brak danych pogody' + (lastErr ? ' (' + lastErr + ')' : '');
   });
 }
 
@@ -374,7 +394,7 @@ function fetchGrid(center) {
   }
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') + '&longitude=' + lons.join(',') +
     '&hourly=precipitation,cloud_cover,wind_speed_10m,wind_direction_10m&past_days=1&forecast_days=3&timeformat=unixtime';
-  return fetch(url).then(function (res) { return res.json(); }).then(function (root) {
+  return getJson(url, 40, 'grid').then(function (root) {
     return buildGrid(root, ROWS, COLS, { latMax: latMax, lonMin: lonMin, dLat: dLat, dLon: dLon, center: center }, true);
   });
 }
@@ -388,7 +408,7 @@ function fetchFine(center) {
   }
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') + '&longitude=' + lons.join(',') +
     '&hourly=precipitation,cloud_cover&past_days=1&forecast_days=3&timeformat=unixtime';
-  return fetch(url).then(function (res) { return res.json(); }).then(function (root) {
+  return getJson(url, 40, 'fine').then(function (root) {
     return buildGrid(root, FROWS, FCOLS, { latMax: latMax, lonMin: lonMin, dLat: dLat, dLon: dLon, center: center }, false);
   });
 }
@@ -407,7 +427,7 @@ function loadForecast() {
     setupForecast();
     renderNowcast();
   }).catch(function () {
-    if (!state.grid) $('caption').textContent = 'Prognoza niedostępna';
+    if (!state.grid) $('caption').textContent = 'Prognoza niedostępna' + (lastErr ? ' (' + lastErr + ')' : '');
   });
 }
 
@@ -497,7 +517,7 @@ function loadNowcast() {
   var id = ++ncReq, c = state.coord;
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat + '&longitude=' + c.lon +
     '&minutely_15=precipitation&forecast_days=2&timeformat=unixtime';
-  fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+  getJson(url, 4, 'nc').then(function (j) {
     if (id !== ncReq) return;
     var m = j && j.minutely_15, series = [];
     if (m && m.time && m.precipitation) {
