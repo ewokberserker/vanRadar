@@ -165,7 +165,7 @@
     <div class="btn" id="locate">◎</div>
 
     <div class="glass" id="legend">
-      <div id="legBar" style="background:linear-gradient(to right,#8fd0ff,#3b8bff,#2fc24a,#ffe033,#ff9a1f,#e5261f,#b233cc)"></div>
+      <div id="legBar"><i style="background:#8fd0ff"></i><i style="background:#3b8bff"></i><i style="background:#2fc24a"></i><i style="background:#ffe033"></i><i style="background:#ff9a1f"></i><i style="background:#e5261f"></i><i style="background:#b233cc"></i></div>
       <span class="leg" style="left:0.75rem;top:1.75rem">Słaby deszcz</span>
       <span class="leg" style="left:0;width:100%;text-align:center;top:1.75rem">Umiarkowany</span>
       <span class="leg" style="right:0.75rem;top:1.75rem">Silny</span>
@@ -765,24 +765,23 @@ var RAIN_STOP = [0.1, 0.5, 1, 2.5, 5, 10, 20];   // mm/h odpowiadające kolejnym
 var cloudA = new Float32Array(101);
 for (var ci = 0; ci <= 100; ci++) cloudA[ci] = Math.pow(ci / 100, 1.2) * 0.5;
 
-// ciągła skala kolorów opadu (zamiast twardych stopni): tablica indeksowana pierwiastkiem z natężenia,
-// dzięki czemu słaby deszcz ma drobny krok i brzeg plamy znika łagodnie
-var LUT_N = 512, LUT_MAX = 30;
+// skala opadu w wyraźnych stopniach (7 kolorów, jak w pierwszej wersji), ale granice między stopniami są tylko
+// wąsko wygładzone (kilka pikseli), więc kolor jest czytelny, a krawędzie nie są ząbkowane.
+// Tablica indeksowana pierwiastkiem z natężenia - drobny krok także przy słabym deszczu.
+var LUT_N = 1024, LUT_MAX = 30, BAND_THR = [0.5, 1, 2.5, 5, 10, 20], BAND_SOFT = 0.18;   // BAND_SOFT: szerokość przejścia (w skali logarytmicznej)
 var lutR = new Uint8Array(LUT_N), lutG = new Uint8Array(LUT_N), lutB = new Uint8Array(LUT_N), lutA = new Float32Array(LUT_N);
 (function () {
   for (var i = 0; i < LUT_N; i++) {
-    var q = i / (LUT_N - 1), p = LUT_MAX * q * q, k = 0, u = 0;
-    if (p <= RAIN_STOP[0]) { k = 0; u = 0; }
-    else if (p >= RAIN_STOP[6]) { k = 5; u = 1; }
-    else {
-      while (k < 5 && p >= RAIN_STOP[k + 1]) k++;
-      u = (Math.log(p) - Math.log(RAIN_STOP[k])) / (Math.log(RAIN_STOP[k + 1]) - Math.log(RAIN_STOP[k]));
-    }
-    lutR[i] = Math.round(RAIN_COL[k * 3] + (RAIN_COL[k * 3 + 3] - RAIN_COL[k * 3]) * u);
-    lutG[i] = Math.round(RAIN_COL[k * 3 + 1] + (RAIN_COL[k * 3 + 4] - RAIN_COL[k * 3 + 1]) * u);
-    lutB[i] = Math.round(RAIN_COL[k * 3 + 2] + (RAIN_COL[k * 3 + 5] - RAIN_COL[k * 3 + 2]) * u);
-    var t = Math.max(0, Math.min(1, (p - 0.03) / 0.3));
-    lutA[i] = 0.82 * t * t * (3 - 2 * t);
+    var q = i / (LUT_N - 1), p = LUT_MAX * q * q, lv = 0, j, a = 0, b = 0, t = 0;
+    for (j = 0; j < 6; j++) if (p >= BAND_THR[j]) lv = j + 1;
+    a = lv; b = lv;
+    if (lv > 0) { var uLow = Math.log(p / BAND_THR[lv - 1]) / BAND_SOFT; if (uLow < 0.5) { a = lv - 1; b = lv; t = 0.5 + uLow; } }
+    if (lv < 6) { var uUp = Math.log(p / BAND_THR[lv]) / BAND_SOFT; if (uUp > -0.5) { a = lv; b = lv + 1; t = uUp + 0.5; } }
+    lutR[i] = Math.round(RAIN_COL[a * 3] + (RAIN_COL[b * 3] - RAIN_COL[a * 3]) * t);
+    lutG[i] = Math.round(RAIN_COL[a * 3 + 1] + (RAIN_COL[b * 3 + 1] - RAIN_COL[a * 3 + 1]) * t);
+    lutB[i] = Math.round(RAIN_COL[a * 3 + 2] + (RAIN_COL[b * 3 + 2] - RAIN_COL[a * 3 + 2]) * t);
+    var e = Math.max(0, Math.min(1, (p - 0.06) / 0.2));   // brzeg plamy: wąskie, gładkie wejście
+    lutA[i] = 0.84 * e * e * (3 - 2 * e);
   }
 })();
 
@@ -904,7 +903,7 @@ function paintWx() {
       if (p < 0) p = 0;
       if (cv < 0) cv = 0; else if (cv > 100) cv = 100;   // bikubiczna może minimalnie wyjść poza zakres
       var ra = 0, rr = 0, rg = 0, rb = 0;
-      if (p > 0.03) {
+      if (p > 0.06) {
         var li = Math.round(Math.sqrt(p / LUT_MAX) * (LUT_N - 1)); if (li > LUT_N - 1) li = LUT_N - 1;
         ra = lutA[li]; rr = lutR[li]; rg = lutG[li]; rb = lutB[li];
       }
