@@ -266,14 +266,15 @@ applyScale();
 function isPortrait() { return window.innerHeight > window.innerWidth; }
 
 // ===================== stan =====================
-// siatka ogólna (wiatr, tło): 11 x 14 punktów na obszarze 6 x 9 stopni
-var ROWS = 9, COLS = 11, LAT_SPAN = 6, LON_SPAN = 9;
+// siatka ogólna (wiatr, tło): 7 x 9 punktów na obszarze 6 x 9 stopni
+var ROWS = 7, COLS = 9, LAT_SPAN = 6, LON_SPAN = 9;
+var GRID_MAX_AGE = 90 * 60 * 1000;   // jak często pobierać siatkę od nowa (oszczędność limitu zapytań)
 // siatka dokładna (opady i chmury) wokół Ciebie: 13 x 13 punktów co ok. 5,5 km (ten sam obszar co wcześniej, gęściej)
 var FROWS = 13, FCOLS = 13, F_DLAT = 0.05;
 var state = {
   coord: { lat: 52.2297, lon: 21.0122 }, name: 'Warszawa', usingSearch: false, userLoc: null, centered: false,
   horizon: 12, wind: true, clouds: true, sat: true,
-  grid: null, fine: null, gridFetchedAt: 0, active: [], pos: 0, frame: 0, frame2: 0, sub: 0, radar: null, timer: null, lastUpdate: 0, reqId: 0,
+  grid: null, fine: null, gridFetchedAt: 0, active: [], pos: 0, frame: 0, frame2: 0, sub: 0, radar: null, inflight: null, timer: null, lastUpdate: 0, reqId: 0,
   nowSeries: null, nowSrc: ''
 };
 try {
@@ -293,27 +294,47 @@ function addRecent(name, lat, lon) {
 // pobieranie JSON z kontrolą błędów i pamięcią podręczną (limit zapytań Open-Meteo)
 var lastErr = '';
 function getJson(url, ttlMin, key) {
+  var stale = null;
   if (key && ttlMin) {
     try {
       var c = JSON.parse(localStorage.getItem('vr_c_' + key) || 'null');
-      if (c && c.url === url && Date.now() - c.t < ttlMin * 60000) return Promise.resolve(c.j);
+      if (c && c.url === url) {
+        if (Date.now() - c.t < ttlMin * 60000) return Promise.resolve(c.j);
+        stale = c.j;   // starsze dane zostają jako zapas na wypadek błędu lub limitu zapytań
+      }
     } catch (e) {}
   }
   return fetch(url).then(function (r) {
-    if (!r.ok) { lastErr = 'HTTP ' + r.status; throw new Error(lastErr); }
-    return r.json();
+    if (r.ok) return r.json();
+    return r.json().then(function (b) { return b; }, function () { return null; }).then(function (b) {
+      lastErr = 'HTTP ' + r.status + (b && b.reason ? ': ' + b.reason : '');
+      throw new Error(lastErr);
+    });
   }).then(function (j) {
     if (j && j.error) { lastErr = String(j.reason || 'błąd'); throw new Error(lastErr); }
     lastErr = '';
     if (key && ttlMin) { try { localStorage.setItem('vr_c_' + key, JSON.stringify({ url: url, t: Date.now(), j: j })); } catch (e) {} }
     return j;
+  }).catch(function (e) {
+    if (stale) { lastErr = ''; return stale; }
+    throw e;
   });
+}
+
+// krótki, zrozumiały opis błędu (limity zapytań)
+function errText() {
+  var e = lastErr || '';
+  if (/Minutely/i.test(e)) return 'limit zapytań na minutę, spróbuj za chwilę';
+  if (/Hourly/i.test(e)) return 'limit zapytań na godzinę';
+  if (/Daily/i.test(e)) return 'dzienny limit zapytań';
+  if (/429/.test(e)) return 'limit zapytań (429)';
+  return e.length > 50 ? e.slice(0, 50) + '…' : e;
 }
 
 // ===================== pogoda (panel) =====================
 function loadWeather() {
   var c = state.coord;
-  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat + '&longitude=' + c.lon +
+  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat.toFixed(2) + '&longitude=' + c.lon.toFixed(2) +
     '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,pressure_msl,wind_speed_10m,wind_direction_10m' +
     '&hourly=temperature_2m,precipitation_probability,weather_code,is_day' +
     '&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7';
@@ -322,7 +343,7 @@ function loadWeather() {
     state.lastUpdate = Date.now();
     $('upd').textContent = hhmm(new Date());
   }).catch(function () {
-    $('desc').textContent = 'Brak danych pogody' + (lastErr ? ' (' + lastErr + ')' : '');
+    $('desc').textContent = 'Brak danych pogody' + (lastErr ? ' (' + errText() + ')' : '');
   });
 }
 
@@ -396,7 +417,7 @@ function fetchGrid(center) {
   }
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') + '&longitude=' + lons.join(',') +
     '&hourly=precipitation,cloud_cover,wind_speed_10m,wind_direction_10m&past_days=1&forecast_days=3&timeformat=unixtime';
-  return getJson(url, 40, 'grid').then(function (root) {
+  return getJson(url, 60, 'grid').then(function (root) {
     return buildGrid(root, ROWS, COLS, { latMax: latMax, lonMin: lonMin, dLat: dLat, dLon: dLon, center: center }, true);
   });
 }
@@ -410,16 +431,18 @@ function fetchFine(center) {
   }
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') + '&longitude=' + lons.join(',') +
     '&hourly=precipitation,cloud_cover&past_days=1&forecast_days=3&timeformat=unixtime';
-  return getJson(url, 40, 'fine').then(function (root) {
+  return getJson(url, 60, 'fine').then(function (root) {
     return buildGrid(root, FROWS, FCOLS, { latMax: latMax, lonMin: lonMin, dLat: dLat, dLon: dLon, center: center }, false);
   });
 }
 
 function loadForecast() {
-  var id = ++state.reqId, c = { lat: state.coord.lat, lon: state.coord.lon };
+  var id = ++state.reqId, c = { lat: Math.round(state.coord.lat * 10) / 10, lon: Math.round(state.coord.lon * 10) / 10 };
+  state.inflight = c;
   var fineP = fetchFine(c).catch(function () { return null; });
   fetchGrid(c).then(function (g) { return fineP.then(function (f) { return [g, f]; }); }).then(function (res) {
     if (id !== state.reqId) return;
+    state.inflight = null;
     var g = res[0], f = res[1];
     if (f && (f.times.length !== g.times.length || f.times[0] !== g.times[0])) f = null;
     state.grid = g; state.fine = f; state.gridFetchedAt = Date.now();
@@ -428,7 +451,8 @@ function loadForecast() {
     if (state.horizon !== 0) { stopPlay(); setupForecast(); }
     renderNowcast();
   }).catch(function () {
-    if (!state.grid) $('caption').textContent = 'Prognoza niedostępna' + (lastErr ? ' (' + lastErr + ')' : '');
+    if (id === state.reqId) state.inflight = null;
+    if (!state.grid) $('caption').textContent = 'Prognoza niedostępna' + (lastErr ? ' (' + errText() + ')' : '');
   });
 }
 
@@ -627,7 +651,7 @@ function fetchRadar(cb) {
     all.sort(function (a, b) { return a.time - b.time; });
     cb(j.host, all);
   }).catch(function () {
-    if (state.horizon === 0 && !state.radar) $('caption').textContent = 'Radar niedostępny' + (lastErr ? ' (' + lastErr + ')' : '');
+    if (state.horizon === 0 && !state.radar) $('caption').textContent = 'Radar niedostępny' + (lastErr ? ' (' + errText() + ')' : '');
   });
 }
 
@@ -689,7 +713,7 @@ function seriesFromGrid() {
 
 function loadNowcast() {
   var id = ++ncReq, c = state.coord;
-  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat + '&longitude=' + c.lon +
+  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat.toFixed(2) + '&longitude=' + c.lon.toFixed(2) +
     '&minutely_15=precipitation&forecast_days=2&timeformat=unixtime';
   getJson(url, 4, 'nc').then(function (j) {
     if (id !== ncReq) return;
@@ -1004,7 +1028,11 @@ function reverseName(lat, lon) {
 
 function refreshGridIfFar() {
   var g = state.grid;
-  if (!g) { loadForecast(); return; }
+  if (!g) {
+    var fl = state.inflight;   // pobieranie już trwa dla tego miejsca - nie wysyłamy drugiego
+    if (fl && Math.abs(fl.lat - state.coord.lat) * 111 + Math.abs(fl.lon - state.coord.lon) * 68 < 20) return;
+    loadForecast(); return;
+  }
   var d = Math.abs(g.center.lat - state.coord.lat) * 111 + Math.abs(g.center.lon - state.coord.lon) * 68;
   if (d > 20) loadForecast();
 }
@@ -1153,12 +1181,12 @@ start = function () {
   // ładowanie danych
   loadWeather(); loadForecast(); loadNowcast(); useGps(false);
 
-  setInterval(function () { loadWeather(); if (Date.now() - state.gridFetchedAt > 3600 * 1000) loadForecast(); else rebuildWindow(); }, 10 * 60 * 1000);
+  setInterval(function () { loadWeather(); if (Date.now() - state.gridFetchedAt > GRID_MAX_AGE) loadForecast(); else rebuildWindow(); }, 10 * 60 * 1000);
   setInterval(loadNowcast, 5 * 60 * 1000);
   setInterval(renderNowcast, 30 * 1000);
   setInterval(function () { if (state.horizon === 0) refreshRadar(); }, 5 * 60 * 1000);
   function wake() {
-    if (Date.now() - state.lastUpdate > 2 * 60 * 1000) { loadWeather(); if (Date.now() - state.gridFetchedAt > 3600 * 1000) loadForecast(); loadNowcast(); }
+    if (Date.now() - state.lastUpdate > 2 * 60 * 1000) { loadWeather(); if (Date.now() - state.gridFetchedAt > GRID_MAX_AGE) loadForecast(); loadNowcast(); }
     rebuildWindow(); renderNowcast();
     if (state.horizon === 0) refreshRadar();
   }
