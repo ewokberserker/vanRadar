@@ -34,7 +34,11 @@
   #temp { position:absolute; left:6.125rem; top:2.125rem; font-size:3.625rem; font-weight:200; line-height:4.375rem; }
   #desc { position:absolute; left:0.875rem; top:6.75rem; font-size:1rem; }
   #feels { position:absolute; left:0.875rem; top:8.125rem; font-size:0.875rem; color:rgba(255,255,255,.6); }
-  #sun { position:absolute; right:0.875rem; top:2.6rem; text-align:right; font-size:0.9375rem; line-height:1.75rem; color:rgba(255,255,255,.88); white-space:nowrap; }
+  #sun { position:absolute; right:0.875rem; top:2.4rem; }
+  .sunT { display:flex; align-items:center; background:rgba(255,255,255,.08); border-radius:0.625rem; padding:0.25rem 0.625rem 0.25rem 0.4rem; margin-bottom:0.375rem; white-space:nowrap; }
+  .sunT svg { width:1.5rem; height:1.5rem; margin-right:0.4rem; -webkit-flex:none; flex:none; }
+  .sunT small { display:block; font-size:0.625rem; line-height:0.8rem; color:rgba(255,255,255,.6); }
+  .sunT b { display:block; font-size:0.9375rem; font-weight:600; line-height:1.05rem; }
   .stat { position:absolute; top:9.875rem; width:33%; }
   .stat .cap { font-size:0.6875rem; color:rgba(255,255,255,.6); }
   .stat .val { font-size:0.9375rem; font-weight:600; margin-top:0.125rem; white-space:nowrap; }
@@ -142,7 +146,10 @@
       <div id="searchBtn">🔍</div>
       <div id="icon">⛅️</div>
       <div id="temp">--°</div>
-      <div id="sun"><div id="sunUp">🌅 --:--</div><div id="sunDn">🌇 --:--</div></div>
+      <div id="sun">
+        <div class="sunT"><svg viewBox="0 0 24 24"><path d="M3 19h18" stroke="#ffb74d" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M7 19a5 5 0 0 1 10 0z" fill="#ffb74d"/><path d="M12 11V3M9 6l3-3 3 3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><div><small>Wschód</small><b id="sunUp">--:--</b></div></div>
+        <div class="sunT"><svg viewBox="0 0 24 24"><path d="M3 19h18" stroke="#ff8a65" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M7 19a5 5 0 0 1 10 0z" fill="#ff8a65"/><path d="M12 3v8M9 8l3 3 3-3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg><div><small>Zachód</small><b id="sunDn">--:--</b></div></div>
+      </div>
       <div id="desc">Ładowanie...</div>
       <div id="feels"></div>
       <div class="stat" style="left:0.875rem"><div class="cap">Wilgotność</div><div class="val" id="hum">--</div></div>
@@ -390,8 +397,8 @@ function renderWeather(j) {
       '<div class="p">' + Math.round(num(h.precipitation_probability[i])) + '%</div></div>';
   }
   $('hscroll').innerHTML = html;
-  $('sunUp').textContent = '🌅 ' + hm(d.sunrise && d.sunrise[0]);
-  $('sunDn').textContent = '🌇 ' + hm(d.sunset && d.sunset[0]);
+  $('sunUp').textContent = hm(d.sunrise && d.sunrise[0]);
+  $('sunDn').textContent = hm(d.sunset && d.sunset[0]);
 
   var rows = '';
   for (i = 0; i < d.time.length; i++) {
