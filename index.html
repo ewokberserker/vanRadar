@@ -34,6 +34,7 @@
   #temp { position:absolute; left:6.125rem; top:2.125rem; font-size:3.625rem; font-weight:200; line-height:4.375rem; }
   #desc { position:absolute; left:0.875rem; top:6.75rem; font-size:1rem; }
   #feels { position:absolute; left:0.875rem; top:8.125rem; font-size:0.875rem; color:rgba(255,255,255,.6); }
+  #sun { position:absolute; right:0.875rem; top:2.6rem; text-align:right; font-size:0.9375rem; line-height:1.75rem; color:rgba(255,255,255,.88); white-space:nowrap; }
   .stat { position:absolute; top:9.875rem; width:33%; }
   .stat .cap { font-size:0.6875rem; color:rgba(255,255,255,.6); }
   .stat .val { font-size:0.9375rem; font-weight:600; margin-top:0.125rem; white-space:nowrap; }
@@ -45,6 +46,8 @@
   #hscroll::-webkit-scrollbar { display:none; }
   .hc { display:inline-block; width:3.5rem; height:100%; margin-right:0.125rem; text-align:center; border-radius:0.625rem; vertical-align:top; }
   .hc.first { background:rgba(255,255,255,.08); }
+  .hc.day { border-left:1px solid rgba(255,255,255,.2); }
+  .hc.day .t { color:#fff; font-weight:600; }
   .hc .t { font-size:0.8125rem; color:rgba(255,255,255,.6); margin-top:0.375rem; }
   .hc .i { font-size:1.625rem; margin-top:0.25rem; height:2rem; line-height:2rem; }
   .hc .d { font-size:1rem; font-weight:600; margin-top:0.25rem; }
@@ -89,6 +92,13 @@
   #legBar { position:absolute; left:0.75rem; right:0.75rem; top:0.625rem; height:0.75rem; border-radius:0.375rem; overflow:hidden; display:flex; }
   #legBar i { -webkit-flex:1; flex:1; display:block; }
   #legend span { position:absolute; font-size:0.6875rem; line-height:0.875rem; color:rgba(255,255,255,.7); white-space:nowrap; }
+  #legBar2 { position:absolute; left:0.75rem; right:0.75rem; top:3.1rem; height:0.75rem; border-radius:0.375rem; overflow:hidden; display:none; }
+  #legBar2 i { -webkit-flex:1; flex:1; display:block; }
+  #legend .lgs { display:none; }
+  #legend.sn { height:6.5rem; }
+  #legend.sn #legBar2 { display:flex; }
+  #legend.sn .lgs { display:block; }
+  #legend.sn #legInfo { top:5.1rem !important; }
   #legend.radar #legBar, #legend.radar .leg { display:none; }
   #legend.radar #legInfo { top:0.75rem !important; }
   #bar { left:0.875rem; bottom:0.875rem; right:12.125rem; height:4rem; }
@@ -132,6 +142,7 @@
       <div id="searchBtn">🔍</div>
       <div id="icon">⛅️</div>
       <div id="temp">--°</div>
+      <div id="sun"><div id="sunUp">🌅 --:--</div><div id="sunDn">🌇 --:--</div></div>
       <div id="desc">Ładowanie...</div>
       <div id="feels"></div>
       <div class="stat" style="left:0.875rem"><div class="cap">Wilgotność</div><div class="val" id="hum">--</div></div>
@@ -139,7 +150,7 @@
       <div class="stat" style="left:67%"><div class="cap">Ciśnienie</div><div class="val" id="prs">--</div></div>
     </div>
     <div class="card" id="hourly">
-      <div class="title">Prognoza godzinowa</div>
+      <div class="title">Prognoza godzinowa · 24 h</div>
       <div id="hscroll"></div>
     </div>
     <div class="card" id="daily">
@@ -156,6 +167,7 @@
       <div id="toolbar">
         <div id="seg"><div data-h="12" class="on">12h</div><div data-h="24">24h</div><div data-h="48">48h</div><div data-h="0">Radar</div></div>
         <div class="btn on" id="btnClouds">☁️ Chmury</div>
+        <div class="btn on" id="btnSnow">❄️ Śnieg</div>
         <div class="btn on" id="btnWind">💨 Wiatr</div>
         <div class="btn" id="btnBase">🛰 Satelita</div>
         <div class="btn" id="btnFull">⛶ Pełny ekran</div>
@@ -169,6 +181,10 @@
       <span class="leg" style="left:0.75rem;top:1.75rem">Słaby deszcz</span>
       <span class="leg" style="left:0;width:100%;text-align:center;top:1.75rem">Umiarkowany</span>
       <span class="leg" style="right:0.75rem;top:1.75rem">Silny</span>
+      <div id="legBar2"><i style="background:#aaf5eb"></i><i style="background:#5ae1d7"></i><i style="background:#1ec8cd"></i><i style="background:#14a0c8"></i><i style="background:#1973b9"></i><i style="background:#374baa"></i><i style="background:#5f3296"></i></div>
+      <span class="lgs" style="left:0.75rem;top:4.05rem">Słaby śnieg</span>
+      <span class="lgs" style="left:0;width:100%;text-align:center;top:4.05rem">Umiarkowany</span>
+      <span class="lgs" style="right:0.75rem;top:4.05rem">Silny</span>
       <span id="legInfo" style="left:0.75rem;top:3rem"></span>
     </div>
 
@@ -268,12 +284,13 @@ function isPortrait() { return window.innerHeight > window.innerWidth; }
 // ===================== stan =====================
 // siatka ogólna (wiatr, tło): 7 x 9 punktów na obszarze 6 x 9 stopni
 var ROWS = 7, COLS = 9, LAT_SPAN = 6, LON_SPAN = 9;
+var HOURS = 24;   // ile godzin w prognozie godzinowej (panel)
 var GRID_MAX_AGE = 90 * 60 * 1000;   // jak często pobierać siatkę od nowa (oszczędność limitu zapytań)
 // siatka dokładna (opady i chmury) wokół Ciebie: 13 x 13 punktów co ok. 5,5 km (ten sam obszar co wcześniej, gęściej)
 var FROWS = 13, FCOLS = 13, F_DLAT = 0.05;
 var state = {
   coord: { lat: 52.2297, lon: 21.0122 }, name: 'Warszawa', usingSearch: false, userLoc: null, centered: false,
-  horizon: 12, wind: true, clouds: true, sat: true,
+  horizon: 12, wind: true, clouds: true, snow: true, sat: true,
   grid: null, fine: null, gridFetchedAt: 0, active: [], pos: 0, frame: 0, frame2: 0, sub: 0, radar: null, inflight: null, timer: null, lastUpdate: 0, reqId: 0,
   nowSeries: null, nowSrc: ''
 };
@@ -337,7 +354,7 @@ function loadWeather() {
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat.toFixed(2) + '&longitude=' + c.lon.toFixed(2) +
     '&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,pressure_msl,wind_speed_10m,wind_direction_10m' +
     '&hourly=temperature_2m,precipitation_probability,weather_code,is_day' +
-    '&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=7';
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset&timezone=auto&forecast_days=7';
   getJson(url, 8, 'panel').then(function (j) {
     renderWeather(j);
     state.lastUpdate = Date.now();
@@ -346,6 +363,9 @@ function loadWeather() {
     $('desc').textContent = 'Brak danych pogody' + (lastErr ? ' (' + errText() + ')' : '');
   });
 }
+
+// godzina z tekstu ISO (np. 2026-11-23T07:12) - brak wschodu/zachodu (dzień/noc polarna) pokazujemy jako kreskę
+function hm(t) { t = String(t || ''); return t.length >= 16 ? t.slice(11, 16) : '—'; }
 
 function renderWeather(j) {
   var cur = j.current, h = j.hourly, d = j.daily;
@@ -361,13 +381,17 @@ function renderWeather(j) {
   var start0 = 0, i;
   for (i = 0; i < h.time.length; i++) { if (h.time[i] >= nowPrefix) { start0 = i; break; } }
   var html = '';
-  for (i = start0; i < Math.min(h.time.length, start0 + 12); i++) {
-    html += '<div class="hc' + (i === start0 ? ' first' : '') + '"><div class="t">' + String(h.time[i]).slice(-5) + '</div>' +
+  for (i = start0; i < Math.min(h.time.length, start0 + HOURS); i++) {
+    var ts = String(h.time[i]), mid = (i > start0 && ts.slice(11, 13) === '00'), lab = ts.slice(-5);
+    if (mid) { var dp = ts.slice(0, 10).split('-'); lab = DAYS_SHORT[new Date(+dp[0], +dp[1] - 1, +dp[2]).getDay()] + ' 00'; }
+    html += '<div class="hc' + (i === start0 ? ' first' : '') + (mid ? ' day' : '') + '"><div class="t">' + lab + '</div>' +
       '<div class="i">' + wmoEmoji(h.weather_code[i], h.is_day[i] > 0) + '</div>' +
       '<div class="d">' + deg(h.temperature_2m[i]) + '</div>' +
       '<div class="p">' + Math.round(num(h.precipitation_probability[i])) + '%</div></div>';
   }
   $('hscroll').innerHTML = html;
+  $('sunUp').textContent = '🌅 ' + hm(d.sunrise && d.sunrise[0]);
+  $('sunDn').textContent = '🌇 ' + hm(d.sunset && d.sunset[0]);
 
   var rows = '';
   for (i = 0; i < d.time.length; i++) {
@@ -387,9 +411,9 @@ var gridCounter = 0;
 function buildGrid(root, rows, cols, meta, withWind) {
   if (!root || !root.length || root.length !== rows * cols) throw new Error('bad grid');
   var times = root[0].hourly.time, n = times.length, N = rows * cols, f, i;
-  var precip = [], cloud = [], windE = [], windN = [];
+  var precip = [], cloud = [], snow = [], snowMax = [], windE = [], windN = [];
   for (f = 0; f < n; f++) {
-    precip.push(new Float32Array(N)); cloud.push(new Float32Array(N));
+    precip.push(new Float32Array(N)); cloud.push(new Float32Array(N)); snow.push(new Float32Array(N)); snowMax.push(0);
     if (withWind) { windE.push(new Float32Array(N)); windN.push(new Float32Array(N)); }
   }
   for (i = 0; i < N; i++) {
@@ -397,6 +421,10 @@ function buildGrid(root, rows, cols, meta, withWind) {
     for (f = 0; f < n; f++) {
       precip[f][i] = num(h.precipitation[f]);
       cloud[f][i] = num(h.cloud_cover[f]);
+      // opad śnieżny: Open-Meteo podaje śnieg w cm; 7 cm śniegu to ok. 10 mm wody, więc przeliczamy na mm/h równoważnika wodnego
+      var sw = (h.snowfall ? num(h.snowfall[f]) : 0) * 10 / 7;
+      if (sw > precip[f][i]) sw = precip[f][i];
+      snow[f][i] = sw; if (sw > snowMax[f]) snowMax[f] = sw;
       if (withWind) {
         var sp = num(h.wind_speed_10m[f]), from = num(h.wind_direction_10m[f]) * Math.PI / 180;
         windE[f][i] = -sp * Math.sin(from);   // dokąd wieje
@@ -405,7 +433,7 @@ function buildGrid(root, rows, cols, meta, withWind) {
     }
   }
   return { id: ++gridCounter, rows: rows, cols: cols, latMax: meta.latMax, lonMin: meta.lonMin, dLat: meta.dLat, dLon: meta.dLon,
-           center: meta.center, times: times, precip: precip, cloud: cloud, windE: windE, windN: windN };
+           center: meta.center, times: times, precip: precip, cloud: cloud, snow: snow, snowMax: snowMax, windE: windE, windN: windN };
 }
 
 function fetchGrid(center) {
@@ -416,7 +444,7 @@ function fetchGrid(center) {
     lats.push((latMax - dLat * r).toFixed(2)); lons.push((lonMin + dLon * c).toFixed(2));
   }
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') + '&longitude=' + lons.join(',') +
-    '&hourly=precipitation,cloud_cover,wind_speed_10m,wind_direction_10m&past_days=1&forecast_days=3&timeformat=unixtime';
+    '&hourly=precipitation,snowfall,cloud_cover,wind_speed_10m,wind_direction_10m&past_days=1&forecast_days=3&timeformat=unixtime';
   return getJson(url, 60, 'grid').then(function (root) {
     return buildGrid(root, ROWS, COLS, { latMax: latMax, lonMin: lonMin, dLat: dLat, dLon: dLon, center: center }, true);
   });
@@ -430,7 +458,7 @@ function fetchFine(center) {
     lats.push((latMax - dLat * r).toFixed(3)); lons.push((lonMin + dLon * c).toFixed(3));
   }
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') + '&longitude=' + lons.join(',') +
-    '&hourly=precipitation,cloud_cover&past_days=1&forecast_days=3&timeformat=unixtime';
+    '&hourly=precipitation,snowfall,cloud_cover&past_days=1&forecast_days=3&timeformat=unixtime';
   return getJson(url, 60, 'fine').then(function (root) {
     return buildGrid(root, FROWS, FCOLS, { latMax: latMax, lonMin: lonMin, dLat: dLat, dLon: dLon, center: center }, false);
   });
@@ -658,7 +686,7 @@ function fetchRadar(cb) {
 function enterRadar() {
   leaveRadar();
   wxCanvas.style.display = 'none';
-  $('legend').className = 'glass radar'; updateLegend();
+  updateLegend();
   $('caption').textContent = 'Radar: wczytywanie...'; $('tlabel').textContent = '--:--';
   fetchRadar(function (host, all) { radarStart(host, all, false); });
 }
@@ -670,7 +698,7 @@ function leaveRadar() {
   if (R) for (i = 0; i < R.frames.length; i++) if (R.frames[i].layer) map.removeLayer(R.frames[i].layer);
   state.radar = null;
   if (wxCanvas) wxCanvas.style.display = '';
-  $('legend').className = 'glass';
+  legendClass();
 }
 
 function refreshRadar() {
@@ -706,7 +734,8 @@ function seriesFromGrid() {
   var g = state.fine || state.grid; if (!g) return null;
   var out = [];
   for (var f = 0; f < g.times.length; f++) {
-    out.push({ end: g.times[f], start: g.times[f] - 3600, rate: sampleScalar(g, g.precip[f], state.coord.lat, state.coord.lon) });
+    out.push({ end: g.times[f], start: g.times[f] - 3600, rate: sampleScalar(g, g.precip[f], state.coord.lat, state.coord.lon),
+               snow: sampleScalar(g, g.snow[f], state.coord.lat, state.coord.lon) });
   }
   return out;
 }
@@ -714,7 +743,7 @@ function seriesFromGrid() {
 function loadNowcast() {
   var id = ++ncReq, c = state.coord;
   var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat.toFixed(2) + '&longitude=' + c.lon.toFixed(2) +
-    '&minutely_15=precipitation&forecast_days=2&timeformat=unixtime';
+    '&minutely_15=precipitation,snowfall&forecast_days=2&timeformat=unixtime';
   getJson(url, 4, 'nc').then(function (j) {
     if (id !== ncReq) return;
     var m = j && j.minutely_15, series = [];
@@ -722,7 +751,8 @@ function loadNowcast() {
       for (var i = 0; i < m.time.length; i++) {
         var v = m.precipitation[i];
         if (v === null || v === undefined) continue;
-        series.push({ end: m.time[i], start: m.time[i] - 900, rate: v * 4 });   // mm/15 min -> mm/h
+        var rt = v * 4, sn = (m.snowfall && m.snowfall[i] ? m.snowfall[i] : 0) * 4 * 10 / 7;   // mm/15 min -> mm/h; śnieg: cm -> mm wody
+        series.push({ end: m.time[i], start: m.time[i] - 900, rate: rt, snow: Math.min(sn, rt) });
       }
     }
     if (series.length < 8) throw new Error('no minutely');
@@ -742,6 +772,13 @@ function fmtIn(min) {
   if (m === 60) { h++; m = 0; }
   return 'za ok. ' + h + ' h' + (m ? ' ' + m + ' min' : '');
 }
+// rodzaj opadu w danej chwili: deszcz, śnieg albo deszcz ze śniegiem
+var KINDS = {
+  rain: { now: '🌧 Pada deszcz', soon: '☔ Deszcz', pin: '💧' },
+  snow: { now: '❄️ Pada śnieg', soon: '❄️ Śnieg', pin: '❄️' },
+  mix:  { now: '🌨 Pada deszcz ze śniegiem', soon: '🌨 Deszcz ze śniegiem', pin: '🌨' }
+};
+function kindOf(e) { var sh = e.rate > 0 ? (e.snow || 0) / e.rate : 0; return sh >= 0.7 ? 'snow' : (sh <= 0.3 ? 'rain' : 'mix'); }
 function intensity(r) { return r < 0.5 ? 'słaby' : r < 2.5 ? 'umiarkowany' : r < 10 ? 'silny' : 'bardzo silny'; }
 
 function renderNowcast() {
@@ -757,8 +794,9 @@ function renderNowcast() {
       if (s[i].rate < RAIN_THR) { endAt = s[i].start; break; }
       if (s[i].start < now + 3600 && s[i].rate > peak) peak = s[i].rate;
     }
-    text = '🌧 Pada teraz (' + intensity(peak) + ')' + (endAt ? ' · koniec ok. ' + hhmm(new Date(endAt * 1000)) : ' · bez przerwy przez 6 h');
-    cls = peak >= 2.5 ? 'strong' : 'now'; pin = '💧 teraz';
+    var kc = KINDS[kindOf(s[cur])];
+    text = kc.now + ' (' + intensity(peak) + ')' + (endAt ? ' · koniec ok. ' + hhmm(new Date(endAt * 1000)) : ' · bez przerwy przez 6 h');
+    cls = peak >= 2.5 ? 'strong' : 'now'; pin = kc.pin + ' teraz';
   } else {
     var k = -1;
     for (i = cur + 1; i < s.length && s[i].start < horizon; i++) { if (s[i].rate >= RAIN_THR) { k = i; break; } }
@@ -767,8 +805,9 @@ function renderNowcast() {
     } else {
       var mins = Math.max(0, (s[k].start - now) / 60), pk = s[k].rate;
       for (i = k; i < s.length && s[i].start < s[k].start + 3600; i++) if (s[i].rate > pk) pk = s[i].rate;
-      text = '☔ Deszcz (' + intensity(pk) + ') ' + fmtIn(mins);
-      if (mins <= 180) { cls = (pk >= 2.5 || mins <= 30) ? 'strong' : 'soon'; pin = '💧 ' + fmtIn(mins); }
+      var ks = KINDS[kindOf(s[k])];
+      text = ks.soon + ' (' + intensity(pk) + ') ' + fmtIn(mins);
+      if (mins <= 180) { cls = (pk >= 2.5 || mins <= 30) ? 'strong' : 'soon'; pin = ks.pin + ' ' + fmtIn(mins); }
       if (cls === 'strong' && pk < 2.5) cls = 'soon';
     }
   }
@@ -784,6 +823,8 @@ var geo = { key: '' };
 
 var RAIN_COL = [143,208,255,  59,139,255,  47,194,74,  255,224,51,  255,154,31,  229,38,31,  178,51,204];
 var RAIN_STOP = [0.1, 0.5, 1, 2.5, 5, 10, 20];   // mm/h odpowiadające kolejnym kolorom
+// śnieg: osobna paleta (turkus -> granat -> fiolet), te same progi natężenia (mm/h wody)
+var SNOW_COL = [170,245,235,  90,225,215,  30,200,205,  20,160,200,  25,115,185,  55,75,170,  95,50,150];
 
 // chmury: przezroczystość białej warstwy
 var cloudA = new Float32Array(101);
@@ -793,21 +834,23 @@ for (var ci = 0; ci <= 100; ci++) cloudA[ci] = Math.pow(ci / 100, 1.2) * 0.5;
 // wąsko wygładzone (kilka pikseli), więc kolor jest czytelny, a krawędzie nie są ząbkowane.
 // Tablica indeksowana pierwiastkiem z natężenia - drobny krok także przy słabym deszczu.
 var LUT_N = 1024, LUT_MAX = 30, BAND_THR = [0.5, 1, 2.5, 5, 10, 20], BAND_SOFT = 0.18;   // BAND_SOFT: szerokość przejścia (w skali logarytmicznej)
-var lutR = new Uint8Array(LUT_N), lutG = new Uint8Array(LUT_N), lutB = new Uint8Array(LUT_N), lutA = new Float32Array(LUT_N);
-(function () {
+function makeLut(COL) {
+  var R = new Uint8Array(LUT_N), G = new Uint8Array(LUT_N), B = new Uint8Array(LUT_N), A = new Float32Array(LUT_N);
   for (var i = 0; i < LUT_N; i++) {
     var q = i / (LUT_N - 1), p = LUT_MAX * q * q, lv = 0, j, a = 0, b = 0, t = 0;
     for (j = 0; j < 6; j++) if (p >= BAND_THR[j]) lv = j + 1;
     a = lv; b = lv;
     if (lv > 0) { var uLow = Math.log(p / BAND_THR[lv - 1]) / BAND_SOFT; if (uLow < 0.5) { a = lv - 1; b = lv; t = 0.5 + uLow; } }
     if (lv < 6) { var uUp = Math.log(p / BAND_THR[lv]) / BAND_SOFT; if (uUp > -0.5) { a = lv; b = lv + 1; t = uUp + 0.5; } }
-    lutR[i] = Math.round(RAIN_COL[a * 3] + (RAIN_COL[b * 3] - RAIN_COL[a * 3]) * t);
-    lutG[i] = Math.round(RAIN_COL[a * 3 + 1] + (RAIN_COL[b * 3 + 1] - RAIN_COL[a * 3 + 1]) * t);
-    lutB[i] = Math.round(RAIN_COL[a * 3 + 2] + (RAIN_COL[b * 3 + 2] - RAIN_COL[a * 3 + 2]) * t);
+    R[i] = Math.round(COL[a * 3] + (COL[b * 3] - COL[a * 3]) * t);
+    G[i] = Math.round(COL[a * 3 + 1] + (COL[b * 3 + 1] - COL[a * 3 + 1]) * t);
+    B[i] = Math.round(COL[a * 3 + 2] + (COL[b * 3 + 2] - COL[a * 3 + 2]) * t);
     var e = Math.max(0, Math.min(1, (p - 0.06) / 0.2));   // brzeg plamy: wąskie, gładkie wejście
-    lutA[i] = 0.84 * e * e * (3 - 2 * e);
+    A[i] = 0.84 * e * e * (3 - 2 * e);
   }
-})();
+  return { r: R, g: G, b: B, a: A };
+}
+var rainLut = makeLut(RAIN_COL), snowLut = makeLut(SNOW_COL);
 
 // wagi interpolacji Catmull-Rom (gładka, bikubiczna) dla 4 sąsiednich punktów siatki
 function crw(t, out, o) {
@@ -857,6 +900,7 @@ function ensureGeometry() {
   geo.aP = new Float32Array(g.rows * w); geo.aC = new Float32Array(g.rows * w);
   geo.bP = f ? new Float32Array(f.rows * w) : null; geo.bC = f ? new Float32Array(f.rows * w) : null;
   geo.tA = new Float32Array(g.rows * w); geo.tB = f ? new Float32Array(f.rows * w) : null;
+  geo.aS = new Float32Array(g.rows * w); geo.bS = f ? new Float32Array(f.rows * w) : null;
   wxCanvas.width = w; wxCanvas.height = h;
   wxCanvas.style.width = size.x + 'px'; wxCanvas.style.height = size.y + 'px';
   geo.img = wxCtx.createImageData(w, h);
@@ -898,6 +942,17 @@ function paintWx() {
       hpass(fg, fg.cloud[f2], B, w, geo.tB); mixIn(geo.bC, geo.tB, tb);
     }
   }
+  // śnieg liczymy tylko wtedy, gdy w tej klatce w ogóle występuje (oszczędza czas na starym iPadzie)
+  var needS = state.snow && (g.snowMax[f] > 0.03 || (blend && g.snowMax[f2] > 0.03) || (fg && (fg.snowMax[f] > 0.03 || (blend && fg.snowMax[f2] > 0.03))));
+  if (needS) {
+    hpass(g, g.snow[f], A, w, geo.aS);
+    if (blend) { hpass(g, g.snow[f2], A, w, geo.tA); mixIn(geo.aS, geo.tA, tb); }
+    if (fg && B) {
+      hpass(fg, fg.snow[f], B, w, geo.bS);
+      if (blend) { hpass(fg, fg.snow[f2], B, w, geo.tB); mixIn(geo.bS, geo.tB, tb); }
+    }
+  }
+  var aS = geo.aS, bS = geo.bS;
   var aP = geo.aP, aC = geo.aC, bP = geo.bP, bC = geo.bC;
   var data = geo.img.data, showC = state.clouds, x, y, o = 0;
   for (y = 0; y < h; y++) {
@@ -912,24 +967,27 @@ function paintWx() {
     for (x = 0; x < w; x++, o += 4) {
       var aOk = aRow && A.colOk[x], bOk = bRow && B.colOk[x];
       if (!aOk && !bOk) { data[o + 3] = 0; continue; }
-      var p = 0, cv = 0, taper = 1;
+      var p = 0, cv = 0, taper = 1, sn = 0;
       if (aOk) {
         p = q0 * aP[a0 + x] + q1 * aP[a1 + x] + q2 * aP[a2 + x] + q3 * aP[a3 + x];
         cv = q0 * aC[a0 + x] + q1 * aC[a1 + x] + q2 * aC[a2 + x] + q3 * aC[a3 + x];
+        if (needS) sn = q0 * aS[a0 + x] + q1 * aS[a1 + x] + q2 * aS[a2 + x] + q3 * aS[a3 + x];
         taper = A.rowT[y] * A.colT[x];
       }
       if (bOk) {   // dokładna siatka nadpisuje ogólną, z miękkim przejściem na brzegu
         var pf = s0 * bP[b0 + x] + s1 * bP[b1 + x] + s2 * bP[b2 + x] + s3 * bP[b3 + x];
         var cf = s0 * bC[b0 + x] + s1 * bC[b1 + x] + s2 * bC[b2 + x] + s3 * bC[b3 + x];
         var tf = B.rowT[y] * B.colT[x];
-        if (aOk) { p = pf * tf + p * (1 - tf); cv = cf * tf + cv * (1 - tf); } else { p = pf; cv = cf; taper = tf; }
+        var sf = needS ? s0 * bS[b0 + x] + s1 * bS[b1 + x] + s2 * bS[b2 + x] + s3 * bS[b3 + x] : 0;
+        if (aOk) { p = pf * tf + p * (1 - tf); cv = cf * tf + cv * (1 - tf); sn = sf * tf + sn * (1 - tf); } else { p = pf; cv = cf; sn = sf; taper = tf; }
       }
       if (p < 0) p = 0;
       if (cv < 0) cv = 0; else if (cv > 100) cv = 100;   // bikubiczna może minimalnie wyjść poza zakres
       var ra = 0, rr = 0, rg = 0, rb = 0;
       if (p > 0.06) {
         var li = Math.round(Math.sqrt(p / LUT_MAX) * (LUT_N - 1)); if (li > LUT_N - 1) li = LUT_N - 1;
-        ra = lutA[li]; rr = lutR[li]; rg = lutG[li]; rb = lutB[li];
+        var lut = (needS && sn * 2 >= p) ? snowLut : rainLut;   // przeważa śnieg -> paleta śniegu
+        ra = lut.a[li]; rr = lut.r[li]; rg = lut.g[li]; rb = lut.b[li];
       }
       var ca = showC ? cloudA[Math.round(cv)] : 0;
       var oa = ra + ca * (1 - ra);
@@ -1110,6 +1168,7 @@ start = function () {
   satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17, opacity: 0.72 });
   darkLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 16 });
   map.createPane('pin'); map.getPane('pin').style.zIndex = 640;
+  map.createPane('wind'); map.getPane('wind').style.zIndex = 420; map.getPane('wind').style.pointerEvents = 'none';
   map.createPane('radar'); map.getPane('radar').style.zIndex = 410; map.getPane('radar').style.pointerEvents = 'none';
   map.createPane('labels'); map.getPane('labels').style.zIndex = 500; map.getPane('labels').style.pointerEvents = 'none';
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17, pane: 'labels' }).addTo(map);
@@ -1118,7 +1177,8 @@ start = function () {
 
   var ov = map.getPanes().overlayPane;
   wxCanvas = document.createElement('canvas'); windCanvas = document.createElement('canvas');
-  [wxCanvas, windCanvas].forEach(function (c) { c.style.position = 'absolute'; c.style.left = '0'; c.style.top = '0'; c.style.pointerEvents = 'none'; ov.appendChild(c); });
+  [wxCanvas, windCanvas].forEach(function (c) { c.style.position = 'absolute'; c.style.left = '0'; c.style.top = '0'; c.style.pointerEvents = 'none'; });
+  ov.appendChild(wxCanvas); map.getPane('wind').appendChild(windCanvas);   // strzałki wiatru nad kafelkami radaru
   wxCtx = wxCanvas.getContext('2d'); windCtx = windCanvas.getContext('2d');
 
   map.on('zoomstart', function () { wxCanvas.style.opacity = 0; windCanvas.style.opacity = 0; });
@@ -1142,6 +1202,7 @@ start = function () {
     if (state.grid) setupForecast(); else { $('caption').textContent = 'Ładowanie prognozy...'; loadForecast(); }
   });
   $('btnClouds').addEventListener('click', function () { state.clouds = !state.clouds; this.className = 'btn' + (state.clouds ? ' on' : ''); updateLegend(); paintWx(); });
+  $('btnSnow').addEventListener('click', function () { state.snow = !state.snow; this.className = 'btn' + (state.snow ? ' on' : ''); updateLegend(); paintWx(); });
   $('btnWind').addEventListener('click', function () { state.wind = !state.wind; this.className = 'btn' + (state.wind ? ' on' : ''); updateLegend(); paintWind(); });
   $('btnBase').addEventListener('click', function () {
     state.sat = !state.sat;
@@ -1194,7 +1255,11 @@ start = function () {
   window.addEventListener('pageshow', wake);
 };
 
+function legendClass() {
+  $('legend').className = 'glass' + (state.horizon === 0 ? ' radar' : (state.snow ? ' sn' : ''));
+}
 function updateLegend() {
+  legendClass();
   if (state.horizon === 0) { $('legInfo').textContent = 'Radar: zmierzone opady (RainViewer, dane IMGW)'; return; }
   var parts = [];
   if (state.clouds) parts.push('Biel: chmury');
