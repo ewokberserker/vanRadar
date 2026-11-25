@@ -176,7 +176,7 @@
         <div class="btn on" id="btnClouds">☁️ Chmury</div>
         <div class="btn on" id="btnSnow">❄️ Śnieg</div>
         <div class="btn on" id="btnWind">💨 Wiatr</div>
-        <div class="btn" id="btnBase">🛰 Satelita</div>
+        <div class="btn" id="btnBase">🌑 Ciemna</div>
         <div class="btn" id="btnFull">⛶ Pełny ekran</div>
       </div>
       <div class="ban" id="banner"></div>
@@ -297,7 +297,7 @@ var GRID_MAX_AGE = 90 * 60 * 1000;   // jak często pobierać siatkę od nowa (o
 var FROWS = 13, FCOLS = 13, F_DLAT = 0.05;
 var state = {
   coord: { lat: 52.2297, lon: 21.0122 }, name: 'Warszawa', usingSearch: false, userLoc: null, centered: false,
-  horizon: 12, wind: true, clouds: true, snow: true, sat: true,
+  horizon: 12, wind: true, clouds: true, snow: true, sat: false,
   grid: null, fine: null, gridFetchedAt: 0, active: [], pos: 0, frame: 0, frame2: 0, sub: 0, radar: null, inflight: null, timer: null, lastUpdate: 0, reqId: 0,
   nowSeries: null, nowSrc: ''
 };
@@ -1179,7 +1179,7 @@ start = function () {
   map.createPane('radar'); map.getPane('radar').style.zIndex = 410; map.getPane('radar').style.pointerEvents = 'none';
   map.createPane('labels'); map.getPane('labels').style.zIndex = 500; map.getPane('labels').style.pointerEvents = 'none';
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, maxNativeZoom: 17, pane: 'labels' }).addTo(map);
-  satLayer.addTo(map);
+  darkLayer.addTo(map);   // domyślnie ciemna mapa; satelitę włącza przycisk
   map.setView([state.coord.lat, state.coord.lon], 10);
 
   var ov = map.getPanes().overlayPane;
